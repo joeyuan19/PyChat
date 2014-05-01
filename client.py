@@ -7,8 +7,8 @@ DIV_CHAR = "="
 user_name = "joe"
 
 def display_chat_log(window, log, w, h):
-    line_height = 
-
+    pass
+    
 try:
     window = curses.initscr()
     curses.noecho()
@@ -22,8 +22,8 @@ try:
     q = -1
     while q != ord('q'):
         window.clear()
-        window.addstr(height*CHAT_PORTION,0,div)
-        display_chat(window, chat_log, width, height)
+        window.addstr(height*3/4,0,div)
+        display_chat_log(window, chat_log, width, height)
         window.refresh()
         q = window.getch()
         if q == 10:
@@ -34,8 +34,13 @@ try:
             if q == ord('q'):
                 break
             q = -1
-        window.addstr((height*2/3)+1,0,chat_msg)
+        window.addstr((height*3/4)+1,0,chat_msg)
         window.refresh()
+except KeyboardInterrupt:
+    print "derp"
+    if curses:
+        curses.endwin()
 finally:
+    print "derp"
     if curses:
         curses.endwin()
