@@ -7,12 +7,17 @@ DIV_CHAR = "="
 user_name = "joe"
 
 def display_chat_log(window, log, w, h):
-    pass
-    
+    row = h*3/4-1
+    for entry in log:
+        while len(entry) > w:
+            window.putstr(row,0,entry[-(len(entry)%w):])
+            row += -1
+            entry = entry[:-(len(entry)%w)]
+        window.putstr(row,0,entry[-(len(entry)%w):])
 try:
     window = curses.initscr()
     curses.noecho()
-    window.nodelay(1)
+    #window.nodelay(1)
     height,width = window.getmaxyx()
     
     chat_log = []
