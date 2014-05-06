@@ -29,6 +29,18 @@ def parse_to_fit_line(s,w):
     return li
             
 
+class ThreadWithEnd(threading.Thread):
+    def __init___(self,*args,**kwargs):
+        super(StatusThread,self).__init__()
+        self._stop = threading.Event()
+
+    def stop(self):
+        self._stop.set()
+
+    def isstopped(self):
+        return self._stop.isSet()
+
+
 class StatusThread(threading.Thread):
     def __init__(self,*args,**kwargs):
         super(StatusThread,self).__init__()
@@ -47,27 +59,28 @@ class StatusThread(threading.Thread):
     def isstopped(self):
         return self._stop.isSet()
 
-class ThreadSafeCursesManager(threading.Thread):
+class ThreadSafeCursesManager(ThreadWithEnd):
     def __init__(self,window,*args,**kwargs):
         self.window = window
-        self._stop = threading.Event()
         self._lock = threading.Event()
         self.queue = []
+        super(ThreadSafeCursesManager,self).__init__(*args,**kwargs)
 
     def run(self):
         while not self.isstopped():
             t = self.check_queue()
             if t:
                 t.give_lock()
-                while self.islocked():
-                    time.sleep(0.1)
-                    
+                self.waitlock() 
 
     def check_queue(self):
         if len(queue) > 0:
             return queue.pop(0)
         else:
             return False
+
+    def request(self,window_manager):
+        self.queue.append(window_manager)
 
     def safe_addstr(self,y,x,s):
         if not self.islocked():
@@ -79,29 +92,31 @@ class ThreadSafeCursesManager(threading.Thread):
             return False
 
     def unlock(self):
-        self._lock.unset()
+        self._lock.clear()
 
     def lock(self):
         self._lock.set()
 
+    def waitlock(self):
+        self._lock.wait()
+
     def islocked(self):
         return self._lock.isSet()
 
-    def stop(self):
-        self._stop.set()
-
-    def isstopped(self):
-        return self._stop.isSet()
-
-
-class SubwindowManager(threading.Thread):
-    def __init__(self,window,y,x,w,h):
+class SubwindowManager(ThreadWithEnd):
+    def __init__(self,window,y,x,w,h,*args,**kwargs):
         self.window = window
         self.x = x
         self.y = y
         self.w = w
         self.h = h
         self.has_lock = False
+        self._stop = threading.Event()
+        super(SubwindowManager,self).__init__(*args,**kwargs)
+
+    def run(self):
+        while not self.isstopped():
+            
 
     def display(self,s):
         lines = parse_to_fit_line(s,self.w)[-self.h:]
@@ -122,10 +137,8 @@ class SubwindowManager(threading.Thread):
     def take_lock(self):
         self.has_lock = False
 
-    def wait_for_lock(self):
-        while not self.has_lock:
-            time.sleep(0.5
-
+    def request_lock(self):
+        self.window.request(self)
 
 def get_divisions(window,ratio=0.75):
     h,w = window.getmaxyx()
