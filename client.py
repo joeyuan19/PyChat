@@ -96,7 +96,7 @@ def split_window(window,ratio=0.75):
     height,width = window.getmaxyx()
     larger = int(round(ratio*height))
     log = window.subwin(larger,width,0,0)
-    chat = window.subwin(height-2,width,larger,0)
+    chat = window.subwin(height-larger-2,width,larger,0)
     status = window.subwin(height-1,0)
     return log, chat, status
 
@@ -105,7 +105,7 @@ def get_window_dims(window):
 
 try:
     window = curses_init()
-    log, chat = split_window(window)
+    log, chat, status = split_window(window)
 
     window.keypad(1)
     chat.keypad(1)
@@ -116,7 +116,6 @@ try:
     chat.idlok(1)
     window.idcok(1)
     chat.idcok(1)
-    x
     chat_height,chat_width = chat.getmaxyx()
     log_height,log_width = log.getmaxyx()
     
