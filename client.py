@@ -1,4 +1,5 @@
 import curses
+import threading
 import time
 import datetime
 
@@ -112,9 +113,32 @@ def display_status_msg(window,msg_info):
     msg = fill_middle(msg,const_info,w)
     write_log(msg)
     window.addstr(0,0,msg)
-    time.sleep(0.5)
     return idx
 
+class StatusThread(threading.Thread):
+    def __init__(self,window,status_msg,*args,**kwargs):
+        super(StatusThread,self).__init__(*args,**kwargs)
+        self.status_msg = status_msg
+        self._stop = threading.Event()
+        self.window = window
+        self.last_index = -1
+        self.mode = 0
+
+    def run(self):
+        while not self.isstopped():
+            self.display()
+            time.sleep(0.9)
+            
+    def display(self):
+        self.window.erase()
+        self.last_index = display_status_msg(self.window,(self.status_msg,self.last_index,self.mode))
+        self.window.refresh()
+    
+    def stop(self):
+        self._stop.set()
+
+    def isstopped(self):
+        return self._stop.isSet()
 
 def get_user_action(window):
     ch = window.getch()
@@ -167,18 +191,14 @@ try:
     last_scroll_index = -1
     mode = 0
 
+    status = StatusThread(status,status_msg)
+    status.start()
 
     while True:
         # Log Display
         log.erase()
         display_chat_log(log,chat_log)
         log.refresh()
-
-        # Status Message
-        status.erase()
-        last_scroll_index = display_status_msg(status,(status_msg,last_scroll_index,mode))
-        status.refresh()
-
 
         # Message Prep Display
         chat.erase()
@@ -197,9 +217,13 @@ try:
             chat_msg += str(chr(c))
             write_log(chat_msg)
     curses.endwin()
+    status.stop()
 except KeyboardInterrupt:
     if curses:
         curses.endwin()
+    status.stop()
 finally:
     if curses:
         curses.endwin()
+    status.stop()
+status.stop()
