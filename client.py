@@ -16,7 +16,7 @@ COLORS = False
 USER_COLOR_INDEX = 1
 DIV_CHAR = "-"
 USER_NAME = "Joe"
-USERS = ["Joe","Adrian","User1","User1","User1","User1","User1","User1","User1","User1","User1","User1","User1","User1","User1","User1","User1","User1","User1","User1","User1"]
+USERS = []
 USER_COLORS = {
     
 }
@@ -24,6 +24,10 @@ USER_COLORS = {
 status_msg = ""
 chat_msg = ""
 chat_log = []
+
+LAST_COLOR_INDEX = -1
+
+write_log(GOOD_COLOR_PAIRS)
 
 # Style info
 
@@ -191,18 +195,19 @@ def curses_init():
     window.keypad(1)
     curses.noecho()
     curses.cbreak()
+    init_colors()
     return window
 
 def init_colors():
     global COLORS
-    COLORS = curses.can_change_colors()
+    COLORS = curses.can_change_color()
     if COLORS:
         curses.start_color()
         global USER_COLOR_INDEX
         USER_COLOR_INDEX = random.randint(1,6)
 
 def generate_color_pair():
-    global LAST_COLOR_PAIR
+    pass
 
 def get_color(idx):
     if idx == 0:
@@ -224,6 +229,9 @@ def get_color(idx):
 
 
 def get_curses_color(idx):
+    global COLORS
+    if not COLORS:
+        return -1
     return curses.color_pair(idx)
 
 def split_window(window,ratio=0.75):
@@ -234,6 +242,7 @@ def split_window(window,ratio=0.75):
     status = window.derwin(height-1,0)
     return log, chat, status
 
+status_thread = None
 
 try:
     window = curses_init()
@@ -242,8 +251,8 @@ try:
     log.leaveok(1)
     status.leaveok(1)
 
-    status_updater = StatusThread(status,status_msg)
-    status_updater.start()
+    status_thread = StatusThread(status,status_msg)
+    status_thread.start()
 
     while True:
         # Log Display
@@ -269,13 +278,15 @@ try:
         elif action == "type":
             chat_msg += str(chr(c))
     curses.endwin()
-    status_updater.stop()
+    status_thread.stop()
 except KeyboardInterrupt:
     if curses:
         curses.endwin()
-    status_updater.stop()
+    if status_thread:
+        status_thread.stop()
 finally:
     if curses:
         curses.endwin()
-    status_updater.stop()
-status_updater.stop()
+    if status_thread:
+        status_thread.stop()
+status_thread.stop()
