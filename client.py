@@ -17,9 +17,23 @@ USER_COLOR_INDEX = 1
 DIV_CHAR = "-"
 USER_NAME = "Joe"
 USERS = []
-USER_COLORS = {
-    
-}
+COLORS = [
+        (0,i) for i in range(1,8)
+    ] + [
+        (1,i) for i in [0,3,4,6]
+    ] + [
+        (2,i) for i in [0,3,4,6]
+    ] + [
+        (3,i) for i in range(0,8) if i != 3
+    ] + [
+        (4,i) for i in range(0,8) if i != 4 or i != 6
+    ] + [
+        (5,i) for i in range(0,8) if i != 5 or i != 7
+    ] + [
+        (6,i) for i in range(0,8) if i != 6 or i != 4
+    ] + [
+        (7,i) for i in range(0,8) if i != 7 or i != 5
+    ]
 
 status_msg = ""
 chat_msg = ""
