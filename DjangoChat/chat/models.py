@@ -11,7 +11,6 @@ import datetime
 #
 # To Do:
 #    [ ] Make it work
-#    [ ] Possible Improvement: make a listener thread and a broadcast thread
 #    [ ] HTTP connection and sercurity
 #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -51,12 +50,12 @@ def random_string(n):
     return s
 
 def parse_msgs(block):
-    exp = r'<msg>.*?</msg>'
+    exp = r'<m>.*?</m>'
     m = re.findall(exp, block, re.S)
     return [parse_msg(i) for i in m]
 
 def parse_msg(msg):
-    exp = r'<body>(.*?)</body><date>(.*?)</date><c>(\d+/\d+)</c>'
+    exp = r'<b>(.*)</b><d>(.*?)</d><u>(.*?)</u><f>(.*?)</f><c>(\d+/\d+)</c>'
     m = re.search(exp, msg, re.S)
     return [m.group(i) for i in range(4)]
     
@@ -89,25 +88,30 @@ class RoomManager(threading.Thread):
     def __init__(self,*args,**kwargs):
         super(RoomThread,self).__init__(*args,**kwargs)
         self._stop = threading.Event()
-        self.room = Room()
+        self.room = Room(self)
+        self.room.save()
         self.host = 'localhost'
         # set up sever socket
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.listen(self.CONNECT_LIMIT)
         # Initiate Socket List
-        self.sockets = []
+        self.sockets = [(self.server_socket,None)]
         self.msg_queue = []
-        self.last_active = datetime.datetime.today()
         self.user_color = {}
+
+    def activity(self):
+        self.last_active = timezone.now()
 
     def get_new_color(self):
         return random.choice([c for c in self.COLORS if c not in self.user_color])
-        
-    def get_receive_port(self):
-        return self.receive_port
     
-    def get_send_port(self):
-        return self.send_port
+    def get_user_color(self,user):
+        for color,user in self.user_color.iteritems():
+            if user == user:
+                return color
+
+    def addr(self):
+        return self.server_socket.getsockname()
     
     def stop(self):
         self._stop.set()
@@ -116,42 +120,41 @@ class RoomManager(threading.Thread):
         return self._stop.isSet()
 
     def run(self):
-        while not self.isstopped():
+        while not self.isstopped() and self.isactive():
             rsockets, wsockets, errsockets = select.select([sock[0] for sock in self.sockets],[],[])
             for sock in rsockets:
                 if sock == self.server_socket:
                     new_conn, new_addr = sock.accept()
                     user = new_conn.recv(128)
                     if not user:
-                        self.connect_user(user,new_sock)
+                        self.connect_user(user, new_sock)
                     else:
                         new_conn.close()
                 else:
                     try:
                         msg = sock.recv(self.RECV_SIZE)
+                        self.adjust_activity(sock)
                         self.broadcast(msg)
                     else:
                         self.disconnect_user(sock=sock)
         self.disconnect()
     
-    def broadcast(self,*msgs):
-        msg = ""
-        for _msg in msgs:
-            msg += str(_msg) + " "
-        msg = msg[:-1]
+    def adjust_activity(self,sock):
+        for sock,user in self.sockets:
+            if sock == sock:
+                user.mark()
     
-    def _broadcast(self,msg):
-        count = len(msg)/RECV_LIMIT + 1
-        i = 1
-        while len(msg) > self.RECV_LIMIT:
-            
-
-
-    def next_req(self):
-        if len(self.req_queue) > 0:
-            return self.req_queue.pop(0)
-        else:
-            return None
+    def package_and_broadcast(self,msg="",u_name="",formatting=""):
+        msg = "<m><b>"+str(msg)+"</b><u>"+str(u_name)+"</u><d>"+full_date()+"</d><f>"+str(formatting)+"</f><c>1/1</c></m>"
+        self.broadcast(msg)
+    
+    def broadcast(self,msg):
+        for sock,user in self.sockets:
+            if sock != self.server_sock:
+                try:
+                    sock.send(msg)
+                except:
+                    self.disconnect_user(sock=sock)
 
     def connect_user(self,u_name,sock):
         user = Users.objects.get(name=u_name)
@@ -161,43 +164,37 @@ class RoomManager(threading.Thread):
             user = user[0]
             if user.isactive():
                 self.sockets.append((sock,user))
-                self.user_color[get_new_color] = user
-                self.broadcast(user,"has entered the room...")
+                self.user_color[self.get_new_color()] = user
+                self.package_and_broadcast(msg=user.name+" has entered the room...")
             else:
                 sock.close()
         
     def get_users(self):
-        return ', '.join(i[1].name for i in self.
-
-    def disconnect_user_by_socket(self,sock):
-        disconnect_user(sock=sock)
-            
-    def disconnect_user_by_user(self,user):
-        disconnect_user(user=user)
+        return ', '.join(user.name for sock,user in self.sockets)
 
     def disconnect_user(self,user=None,sock=None,index=None):
         if index is not None:
             try:
-                self.broadcast(user.name,"has left the room...")
+                self.package_and_broadcast(msg=user.name+" has left the room...")
                 self.sockets[index][0].close()
                 self.sockets.pop(index)
                 return
-            except:
-                pass
+            except Exception as e:
+                write_err("Disconnect Exception:",e)
+                return
         if user is None and sock is None:
             return
-        for i, sock in enumerate(self.sockets):
+        for i,pair in enumerate(self.sockets):
+            sock,user = pair
             if user == sock[1] or sock == sock[0]:
                 disconnect_user(index=i)
                 break
 
-    def add_req(self,req):
-        self.req_queue.append(req)
-
     def disconnect(self):
-        for sock in self.sockets:
+        for sock,user in self.sockets:
             if sock:
                 sock.close()
+        self.room.delete()
 
     def isactive(self):
         return len(self.sockets) > 0
@@ -206,15 +203,17 @@ class RoomManager(threading.Thread):
 class Room(models.Model):
     room_id = models.IntegerField()
     
-    def __init__(self,name,*args,**kwargs):
+    def __init__(self,thread,*args,**kwargs):
         super(Room, self).__init__(*args,**kwargs)
         self.room_id = Room.objects.all().count()
-        self.thread = RoomManager(self.room_id)
-        self.thread.start()
+        self.thread = thread
     
     def delete(self,*args,**kwargs):
         self.thread.stop()
         super(Room, self).delete(*args,**kwargs)
+    
+    def addr(self):
+        return self.thread.addr()
 
     def isactive(self):
         return self.thread.isactive()
@@ -237,15 +236,36 @@ class ChatUser(models.Model):
         self.name = name
         self._loggedin = False
         self.save()
+        self.session_token = ''
+        self.last_seen = timezone.now()
 
     def login(self,password):
         if self.checkpword(password):
             self._loggedin = True
+            self.session_token = random_string(16)
+            self.last_seen = timezone.now()
+        else:
+            self._loggedin = False
+            self.session_token = ''
+        return self.session_token
 
-    def isloggedin(self):
+    def logout(self):
+        if self._loggedin:
+            self._loggedin = False
+            self.session_token = ''
+    
+    def mark(self):
+        self.last_seen = timezone.now()
+    
+    def inactive(self):
+        return timezone.now() - self.last_seen > datetime.timedelta(hour=3)
+    
+    def isactive(self):
         return self._loggedin
-        
+    
     def checkpword(self,check):
+        if len(check) != self.pword_freq:
+            return False
         idx = 0
         for i in range(0,len(self.password),len(check)+1):
             if check[idx] != self.password[i]:
