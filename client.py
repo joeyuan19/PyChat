@@ -14,10 +14,10 @@ def write_log(entry):
 
 COLORS = False
 USER_COLOR_INDEX = 1
-DIV_CHAR = "-"
+DIV_CHAR = "*^%"
 USER_NAME = "Joe"
-USERS = []
-COLORS = [
+USERS = [USER_NAME]
+COLOR_PAIRS = [
         (0,i) for i in range(1,8)
     ] + [
         (1,i) for i in [0,3,4,6]
@@ -40,8 +40,6 @@ chat_msg = ""
 chat_log = []
 
 LAST_COLOR_INDEX = -1
-
-write_log(GOOD_COLOR_PAIRS)
 
 # Style info
 
@@ -75,6 +73,12 @@ def getwindowyx(window=None):
 
 # Functions to handle printing to the screen
 
+def color_safe_(window,y,x,s,c=None):
+    if COLORS and c is not None:
+        window.(y,x,s,c)
+    else:
+        window.(y,x,s)
+
 def display_chat_log(window, log):
     h,w = getwindowyx(window)
     row = 0
@@ -82,19 +86,19 @@ def display_chat_log(window, log):
         # print the header and first line
         user_name = entry[0]
         if user_name == USER_NAME:
-            window.addstr(row,0,user_name,get_curses_color(USER_COLOR_INDEX))
+            color_safe_(window,row,0,user_name,get_curses_color(USER_COLOR_INDEX))
         else:
-            window.addstr(row,0,user_name,curses.color_pair(2))
+            color_safe_(window,row,0,user_name,curses.color_pair(2))
         header = " (" + entry[1] + ")" + ": "
         index = entry[2][:w-len(header)].rfind(" ")
         if index < 0 or len(entry[2][:w-len(header)]) < w:
             index = w - len(header)
-        window.addstr(row,len(user_name),header + entry[2][:index])
+        color_safe_(window,row,len(user_name),header + entry[2][:index])
         row += 1
         if row >= h:
             return
         for line in parse_entry_to_fit(entry[2][index:].strip(),w):
-            window.addstr(row,0,line)
+            color_safe_(window,row,0,line)
             row += 1
             if row >= h:
                 return
@@ -104,7 +108,7 @@ def display_chat_msg(window,msg):
     row = 1
     entry = ""
     for entry in parse_entry_to_fit(msg,w)[-h:]:
-        window.addstr(row,0,entry)
+        color_safe_(window,row,0,entry)
         row += 1
         if row >= h-1:
             break
@@ -124,7 +128,8 @@ def display_chat_msg(window,msg):
 
 def display_div(window):
     h,w = getwindowyx(window)
-    window.addstr(0,0,DIV_CHAR*w)
+    div = DIV_CHAR*(w/len(DIV_CHAR)) + DIV_CHAR[:w%len(DIV_CHAR)]
+    color_safe_(window,0,0,div)
 
 def get_mode_str(mde):
     if mde == MODE_INSERT:
@@ -275,7 +280,7 @@ try:
         log.refresh()
 
         status.erase()
-        status.addstr(0,0,status_msg)
+        display_status(status,0,0,status_msg)
         status.refresh()
 
         # Message Prep Display
