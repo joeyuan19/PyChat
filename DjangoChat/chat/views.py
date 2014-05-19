@@ -1,9 +1,11 @@
 from django.shortcuts import render
-from djano.utils import timezone
+from django.utils import timezone
 from django.http import HttpResponse, HttpResponseNotFound, HttpResponseForbidden
-from chat.models import RoomManger, Room, ChatUser
-import json
+from django.core.exceptions import ObjectDoesNotExist
 
+from chat.models import RoomManager, Room, ChatUser
+import json
+import traceback
 
 def time_now():
     return timezone.now().strftime("%H:%M:%S")
@@ -13,12 +15,26 @@ def write_log(*msg):
     with open('view.log','a') as f:
         f.write(time_now() + ": " + msg +"\n")
 
-def authenticate(u_name,session_token):
-    return ChatUser.objects.get(name=U_name)[0].session_token == session_token
+def write_err(err_name,err):
+    msg = err_name + str(err) + "\n"
+    msg += traceback.format_exc()
+    write_log(msg)
+
+def authenticate(request,method='POST'):
+    try:
+        if method == 'POST':
+            u_name = request.POST['u_name']
+        elif method == 'GET':
+            u_name = request.GET['u_name']
+        session_token = request.POST['session_token']
+        return ChatUser.objects.get(name=U_name)[0].session_token == session_token
+    except Exception as e:
+        write_err("AuthenticateError",e)
+        return False
 
 def get_active_users(request):
     if request.method == 'GET':
-        if request.post['session_token'] and authenticate(request.post['session_token']):
+        if authenticate(request):
             users = ChatUser.objects.all().orber_by('name')
             user_list = {}
             for user in users:
@@ -28,38 +44,38 @@ def get_active_users(request):
                     user_list[user.name] = "offline"
             return HttpResponse(json.dumps(user_list), content_type="application/json")
         else:
-            return HttpResponseForbidden('<h1>Invalid session token, please log in.</h1>')
+            return HttpResponse('<h1>Invalid Session, please log in.</h1>',status=401)
     else:
-        return HttpResponseNotFound('<h1>Invalid request method</h1>')
+        return HttpResponse('<h1>Invalid request method</h1>',satus=405)
 
 def get_room_listing(request):
     if request.method == 'GET':
-        if request.POST['session_token'] and authenticate(request.POST['session_token']):
+        if authenticate(request):
             rooms = room.objects.all()
             room_json = {}
             for room in rooms:
                 room_json[room.room_id] = room.get_users()
             return HttpResponse(json.dumps(room_json), content_type="application/json")
         else:
-            return HttpResponseForbidden('<h1>Invalid session token, please log in.</h1>')
+            return HttpResponse('<h1>Invalid Session, please log in.</h1>',status=401)
     else:
-        return HttpResponseNotFound('<h1>Invalid request method</h1>')
+        return HttpResponse('<h1>Invalid request method</h1>',status=405)
 
 def create_room_view(request):
     if request.method == 'POST':
-        if request.POST['session_token'] and authenticate(request.POST['session_token']):
+        if authenticate(request):
             room = RoomManager()
             room.start()
-            room_info = {"room_id":room.room.room_id,"addr",room.add()}
+            room_info = {"room_id":room.room.room_id,"addr":room.addr()}
             return HttpResonse(json.dumps(room_info), content_type="application/json")
         else:
-            return HttpResponseForbidden('<h1>Invalid Session token, please log in.</h1>')
+            return HttpResponse('<h1>Invalid Session, please log in.</h1>',status=401)
     else:
-        return HttpResponseNotFound('<h1>Invalid request method</h1>')
+        return HttpResponse('<h1>Invalid request method</h1>',status=405)
 
 def join_room_view(request):
     if request.method == 'POST':
-        if request.POST['session_token'] and authenticate(request.POST['session_token']):
+        if authenticate(request):
             try:
                 room_id = request.POST['room_id']
                 room = Room.objects.get(room_id=room_id)
@@ -68,28 +84,59 @@ def join_room_view(request):
                     room_info = {'addr':room.addr()}
                     return HttpResponse(json.dumps(room_info), content_type='application/json')
                 else:
-                    return HttpResponseNotFound('<h1>Room not found</h1>')
+                    return HttpResponse('<h1>Room not found</h1>',status=404)
             except Exception as e:
-                write_log('join error: ',e)
+                write_err('JoinError: ',e)
                 return HttpResponse('<h1>Invalid Post</h1>')
-                
         else:
-            return HttpResponseForbidden('<h1>Invalid Session token, please log in.</h1>')
+            return HttpResponse('<h1>Invalid Session, please log in.</h1>',status=401)
     else:
-        return HttpResponseNotFound('<h1>Invalid request method</h1>')
+        return HttpResponseNotFound('<h1>Invalid request method</h1>',status=405)
     
 
 def login_view(request):
+    if request.method == 'GET':
+        try:
+            u_name = request.GET['u_name']
+            p_word = request.GET['p_word']
+            user = ChatUser.objects.get(name=u_name)
+            if user:
+                session_token = user.login(p_word)
+                if len(session_token) == 0:
+                    return HttpResponseForbidden('<h1>Invalid Login</h1>',status=403)
+                else:
+                    login_info = {'session_token':session_token}
+                    return HttpResponse(json.dumps(login_info), content_type='application/json')
+            else:
+                return HttpResponse('<h1>User '+u_name+' not found</h1>',status=404)
+        except ObjectDoesNotExist:
+            return HttpResponse('<h1>User '+u_name+' not found</h1>',status=404)
+        except Exception as e:
+            write_err('LoginError:',e)
+            return HttpResponse('<h1>Error</h1>',status=501)
+    else:
+        return HttpResponse('<h1>Invalid request method</h1>',status=405)
+
+def logout_view(request):
     if request.method == 'POST':
         try:
-            u_name = request.POST['u_name']
-            p_word = request.POST['p_word']
-            user = ChatUser.objects.get(name=u_name)
-            if user.count() > 0:
-                user = user[0]
-                user
+            if request.POST['session_token'] and request.POST['u_name']:
+                session_token = request.POST['session_token']
+                u_name = request.POST['u_name']
+                user = ChatUser.objects.get(name=u_name)
+                if user:
+                    if user.session_token == session_token:
+                        user.logout()
+                        return HttpResponse('<h1>Successfully Logged Out</h1>')
+                    else:
+                        return HttpReseponse('<h1>Invalid Session Token</h1>',status=401) 
+                else:    
+                    return HttpReseponse('<h1>User '+u_name+' Not Found</h1>',status=501) 
+            else:
+                write_err('LogoutError:',e)
+                return HttpResponse('<h1>no session token provided</h1>',status=405)
         except Exception as e:
-            write_log('LoginError:',e)
+            write_err('LogoutError:',e)
+            return HttpResponse('<h1>Error</h1>',status=500)
     else:
-        return HttpResponseNotFound('<h1>Invalid request method</h1>')
-    
+        return HttpResponseNotFound('<h1>Invalid request method</h1>',status=405)

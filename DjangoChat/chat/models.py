@@ -5,7 +5,7 @@ import random
 import re
 import time
 import datetime
-
+import threading
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 #
@@ -28,7 +28,7 @@ def write_err(*args):
         msg += str(arg) + " "
     msg = msg[:-1]
     with open("err.log","a") as f:
-        f.write(date_now() + " " + time_now() + "#" + msg + "\n") 
+        f.write(date_now() + " " + time_now() + "# " + msg + "\n") 
 
 def write_log(*args):
     msg = ""
@@ -36,6 +36,7 @@ def write_log(*args):
         msg += str(arg) + " "
     msg = msg[:-1]
     with open("chat_app.log","a") as f:
+        f.write(date_now() + " " + time_now() + "# " + msg + "\n") 
 
 # Constants
 
@@ -98,6 +99,7 @@ class RoomManager(threading.Thread):
         self.sockets = [(self.server_socket,None)]
         self.msg_queue = []
         self.user_color = {}
+        self.mark_as_empty = None
 
     def activity(self):
         self.last_active = timezone.now()
@@ -125,7 +127,7 @@ class RoomManager(threading.Thread):
             for sock in rsockets:
                 if sock == self.server_socket:
                     new_conn, new_addr = sock.accept()
-                    user = new_conn.recv(128)
+                    user = new_conn.recv(64)
                     if not user:
                         self.connect_user(user, new_sock)
                     else:
@@ -135,15 +137,14 @@ class RoomManager(threading.Thread):
                         msg = sock.recv(self.RECV_SIZE)
                         self.adjust_activity(sock)
                         self.broadcast(msg)
-                    else:
+                    except Exception as e:
+                        write_err("ReceiveError:",e)
                         self.disconnect_user(sock=sock)
         self.disconnect()
     
     def adjust_activity(self,sock):
-        for sock,user in self.sockets:
-            if sock == sock:
-                user.mark()
-    
+        pass
+
     def package_and_broadcast(self,msg="",u_name="",formatting=""):
         msg = "<m><b>"+str(msg)+"</b><u>"+str(u_name)+"</u><d>"+full_date()+"</d><f>"+str(formatting)+"</f><c>1/1</c></m>"
         self.broadcast(msg)
@@ -195,13 +196,17 @@ class RoomManager(threading.Thread):
             if sock:
                 sock.close()
         self.room.delete()
+        self.stop()
 
     def isactive(self):
-        return len(self.sockets) > 0
-
+        if self.mark_as_empty is None:
+            if len(self.sockets) <= 1:
+                self.mark_as_empty = timezone.now()
+        else:
+            return timezone.now() - self.mark_as_empty >= 0
 
 class Room(models.Model):
-    room_id = models.IntegerField()
+    room_id = models.IntegerField(default=0,null=True,blank=True)
     
     def __init__(self,thread,*args,**kwargs):
         super(Room, self).__init__(*args,**kwargs)
@@ -217,25 +222,27 @@ class Room(models.Model):
 
     def isactive(self):
         return self.thread.isactive()
-        
+    
+    def user_list(self):
+        return self.room.get_users()
+    
     def close_room(self):
         if not self.isactive():
             self.thread.stop()
             self.delete()
 
 class ChatUser(models.Model):
-    name       = models.CharField(max_length=128)
-    password   = models.TextField()
-    pword_freq = models.IntegerField(blank=True,null=True,default=1)
+    name = models.CharField(max_length=64)
+    password = models.TextField(default="")
+    pword_freq = models.IntegerField(default=0)
+    session_token = models.CharField(max_length=16)
 
     def __init__(self,name,password,*args,**kwargs):
         super(ChatUser,self).__init__(*args,**kwargs)
         self.pword_freq = len(password)
-        s = ''.join(str(i) + str(random_string(self.pword_freq)) for i in password)
-        self.password = s
+        self.password = ''.join(str(i) + str(random_string(self.pword_freq)) for i in password)
         self.name = name
         self._loggedin = False
-        self.save()
         self.session_token = ''
         self.last_seen = timezone.now()
 
@@ -264,11 +271,15 @@ class ChatUser(models.Model):
         return self._loggedin
     
     def checkpword(self,check):
-        if len(check) != self.pword_freq:
+        write_log(self.password,self.pword_freq)
+        if self.pword_freq > 0 and len(check) != self.pword_freq:
             return False
         idx = 0
+        write_log("passed first test checking: ")
         for i in range(0,len(self.password),len(check)+1):
+            write_log("checking:",check[idx])
             if check[idx] != self.password[i]:
+                write_log("failed")
                 return False
             idx += 1
         return True
