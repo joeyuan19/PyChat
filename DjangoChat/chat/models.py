@@ -123,7 +123,7 @@ class RoomManager(threading.Thread):
 
     def run(self):
         while not self.isstopped() and self.isactive():
-            rsockets, wsockets, errsockets = select.select([sock[0] for sock in self.sockets],[],[])
+            rsockets, wsockets, errsockets = select.select([sock for sock,user in self.sockets],[],[])
             for sock in rsockets:
                 if sock == self.server_socket:
                     new_conn, new_addr = sock.accept()

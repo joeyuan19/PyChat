@@ -5,7 +5,7 @@ def prompt() :
     sys.stdout.write('<You> ')
     sys.stdout.flush()
 
-#main function
+# main function
 if __name__ == "__main__":
 
     if(len(sys.argv) < 3) :

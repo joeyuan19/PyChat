@@ -3,6 +3,10 @@ import threading
 import time
 import random
 import datetime
+import getpass
+import urllib2
+import json
+import sys
 
 # Debug functions
 
@@ -12,38 +16,6 @@ def write_log(entry):
 
 # Global constants
 
-COLORS = False
-USER_COLOR_INDEX = 1
-DIV_CHAR = "*^%"
-USER_NAME = "Joe"
-USERS = [USER_NAME]
-COLOR_PAIRS = [
-        (0,i) for i in range(1,8)
-    ] + [
-        (1,i) for i in [0,3,4,6]
-    ] + [
-        (2,i) for i in [0,3,4,6]
-    ] + [
-        (3,i) for i in range(0,8) if i != 3
-    ] + [
-        (4,i) for i in range(0,8) if i != 4 or i != 6
-    ] + [
-        (5,i) for i in range(0,8) if i != 5 or i != 7
-    ] + [
-        (6,i) for i in range(0,8) if i != 6 or i != 4
-    ] + [
-        (7,i) for i in range(0,8) if i != 7 or i != 5
-    ]
-
-status_msg = ""
-chat_msg = ""
-chat_log = []
-
-LAST_COLOR_INDEX = -1
-
-# Style info
-
-MODE_INSERT = 0
 
 # Text Parsers
 
@@ -73,11 +45,11 @@ def getwindowyx(window=None):
 
 # Functions to handle printing to the screen
 
-def color_safe_(window,y,x,s,c=None):
+def color_safe_addstr(window,y,x,s,c=None):
     if COLORS and c is not None:
-        window.(y,x,s,c)
+        window.addstr(y,x,s,c)
     else:
-        window.(y,x,s)
+        window.addstr(y,x,s)
 
 def display_chat_log(window, log):
     h,w = getwindowyx(window)
@@ -186,14 +158,58 @@ class StatusThread(threading.Thread):
             
     def display(self):
         self.last_index = display_status_msg(self.window,(self.status_msg,self.last_index,self.mode))
-        global status_msg
-        write_log("Update: " + status_msg)
     
     def stop(self):
         self._stop.set()
 
     def isstopped(self):
         return self._stop.isSet()
+
+class MessageThread(threading.Thread):
+    RECV_SIZE = 2048
+    def __init__(self,server_socket,client_socket,window,message_history=[],*args,**kwargs):
+        super(MessageThread, self).__init__(*args,**kwargs)
+        self.window = window
+        self._stop = threading.Event()
+        self.message_history = message_history
+        self.server_socket = server_socket
+        self.client_socket = client_socket
+        self.sockets = [self.server_socket, sys.stdin]
+        self.partial_messages = []
+    
+    def run(self):
+        while not self.isstopped():
+            r_sock,w_sock,e_sock = select.select(self.sockets,[],[])
+            for sock in r_sock:
+                if sock == self.server_sock:
+                    try:
+                        msg = sock.recv(2048)
+                        self.process(msg)
+                    except Exception as e:
+                        write_log("ServerReadError:",e)
+                        self.stop()
+                        break
+                else:
+                    try:
+                        msg = sock.recv(2048)
+                        self.package_and_send(msg)
+                    except Exception as e:
+                        write_log("ClientReadError:",e)
+                        self.stop()
+                        break
+                        
+
+    def stop(self):
+        self._stop.set()
+
+    def isstopped(self):
+        return self._stop.isSet()
+
+    def process(self,msg):
+        pass
+
+    def package_and_send(self,msg):
+        pass 
 
 def get_user_action(window):
     ch = window.getch()
@@ -202,7 +218,6 @@ def get_user_action(window):
     elif ch == 127:
         action = "delr"
     elif ch > 256 or ch < 0:
-        #write_log("passed char" + str(ch))
         action = "pass"
     else:
         action = "type"
@@ -225,9 +240,6 @@ def init_colors():
         global USER_COLOR_INDEX
         USER_COLOR_INDEX = random.randint(1,6)
 
-def generate_color_pair():
-    pass
-
 def get_color(idx):
     if idx == 0:
         return curses.COLOR_WHITE
@@ -246,7 +258,6 @@ def get_color(idx):
     elif idx == 7:
         return curses.COLOR_BLACK
 
-
 def get_curses_color(idx):
     global COLORS
     if not COLORS:
@@ -261,7 +272,73 @@ def split_window(window,ratio=0.75):
     status = window.derwin(height-1,0)
     return log, chat, status
 
+def login(u_name,p_word,server='127.0.0.1:8000'):
+    # "http://127.0.0.1:8000/login/?u_name=<username>&p_word=<password>"
+    return urllib2.urlopen("http://"+server+"/login/?u_name="+u_name+"&p_word="+p_word)
+    
+def connect(u_name,p_word,server='127.0.0.1'):
+    pass
+
+SESSION_TOKEN = ''
 status_thread = None
+message_thread = None
+COLORS = False
+USER_COLOR_INDEX = 1
+DIV_CHAR = "*^%"
+USER_NAME = "Joe"
+USERS = [USER_NAME]
+COLOR_PAIRS = [
+        (0,i) for i in range(1,8)
+    ] + [
+        (1,i) for i in [0,3,4,6]
+    ] + [
+        (2,i) for i in [0,3,4,6]
+    ] + [
+        (3,i) for i in range(0,8) if i != 3
+    ] + [
+        (4,i) for i in range(0,8) if i != 4 or i != 6
+    ] + [
+        (5,i) for i in range(0,8) if i != 5 or i != 7
+    ] + [
+        (6,i) for i in range(0,8) if i != 6 or i != 4
+    ] + [
+        (7,i) for i in range(0,8) if i != 7 or i != 5
+    ]
+
+status_msg = ""
+chat_msg = ""
+chat_log = []
+
+LAST_COLOR_INDEX = -1
+
+# Style info
+
+MODE_INSERT = 0
+
+
+print "Welcome to PyChat!"
+print "Please login:"
+u_name = raw_input("Username: ")
+p_word = getpass.getpass()
+
+
+#res = login(u_name,p_word)
+res = urllib2.urlopen("http://127.0.0.1:8000/login/?u_name=joe&p_word=joe")
+
+_json = ''
+for i in res:
+    _json += str(i)
+
+print res.getcode(), json.loads(_json)
+
+sys.exit()
+
+
+
+
+
+
+
 
 try:
     window = curses_init()
@@ -270,8 +347,12 @@ try:
     log.leaveok(1)
     status.leaveok(1)
 
+    # Status Handler
     status_thread = StatusThread(status,status_msg)
     status_thread.start()
+
+    # Message Send/Receive
+    #message_thread = MessageThread(
 
     while True:
         # Log Display
