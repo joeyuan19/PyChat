@@ -431,19 +431,12 @@ while True:
         out += online
         if SHOW_OFFLINE:
             out += offline
-    out += "\n\n"
-    out += "<"+str(option)+"> Show offline"
-    option += 1
-    out += "<"+str(option)+"> Logout"
-
     out += "\n\nSelect which chat room you would like to join\n"
     out += "or which user you would like to chat with\n"
     out += "enter the choice number in the brackets <###>\n"
     print out
     
     choice = raw_input('Choice: ')
-
-    print "This does nothing now",choice
 
 try:
     window = curses_init()
