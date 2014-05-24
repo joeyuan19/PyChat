@@ -34,7 +34,6 @@ def authenticate(request,method='POST'):
         return False
 
 def get_lobby(request):
-    print "lobby"
     if request.method == 'GET':
         if authenticate(request,'GET'):
             lobby = {'users':{},'rooms':{}}

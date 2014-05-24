@@ -24,9 +24,6 @@ def write_log(*args):
 def write_err(e,err_title="PyChatError"):
     write_log(err_title+": "+str(e)+"\n",traceback.format_exc())
 
-# Global constants
-
-
 # Text Parsers
 
 def parse_entry_to_fit(entry,width):
@@ -180,21 +177,23 @@ class StatusThread(threading.Thread):
 
 class MessageThread(threading.Thread):
     RECV_SIZE = 2048
-    def __init__(self,server_socket,client_socket,window,message_history=[],*args,**kwargs):
+    def __init__(self,server_addr,client_addr,window,message_history=[],*args,**kwargs):
         super(MessageThread, self).__init__(*args,**kwargs)
         self.window = window
         self._stop = threading.Event()
         self.message_history = message_history
-        self.server_socket = server_socket
-        self.client_socket = client_socket
-        self.sockets = [self.server_socket, sys.stdin]
         self.partial_messages = []
+        self.server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        self.server_socket.connect(server_addr)
+        self.server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        self.server_socket.connect(client_addr)
+        self.sockets = [self.server_socket, self.client_socket]
     
     def run(self):
         while not self.isstopped():
             r_sock,w_sock,e_sock = select.select(self.sockets,[],[])
             for sock in r_sock:
-                if sock == self.server_sock:
+                if sock == self.server_socket:
                     try:
                         msg = sock.recv(2048)
                         self.process(msg)
@@ -210,7 +209,17 @@ class MessageThread(threading.Thread):
                         write_log("ClientReadError:",e)
                         self.stop()
                         break
-                        
+        self.disconnect()
+    
+    def _process_partial_message(self,msg):
+        pass
+
+    def display(self):
+        display_chat_log(self.window,self.message_history)
+
+    def disconnect(self):
+        self.server_socket.close()
+        self.client_socket.close()
 
     def stop(self):
         self._stop.set()
@@ -364,7 +373,7 @@ status_thread = None
 message_thread = None
 COLORS = False
 USER_COLOR_INDEX = 1
-DIV_CHAR = "*^%"
+DIV_CHAR = "*^"
 USER_NAME = "Joe"
 USERS = [USER_NAME]
 COLOR_PAIRS = [
@@ -399,7 +408,7 @@ USER_NAME = ''
 CONNECTION_SPEED = 2.0
 
 
-print "Welcome to PyChat!"
+print "\n\n\nWelcome to PyChat!"
 code = -1
 attempt = 0
 while True:
@@ -520,7 +529,8 @@ def run_chat_room(addr):
         status_thread.start()
 
         # Message Send/Receive
-        #message_thread = MessageThread(
+        message_thread = MessageThread(addr)
+        message_thread.start()
 
         while True:
             # Log Display
