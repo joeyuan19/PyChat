@@ -209,13 +209,19 @@ class RoomManager(threading.Thread):
 
 class Room(models.Model):
     room_id = models.IntegerField(default=0,null=True,blank=True)
-    thread_name = models.CharField(max_length="",null=True,blank=True)
+    thread_name = models.CharField(max_length=64,null=True,blank=True)
     
     def create(self,thread,*args,**kwargs):
         super(Room, self).create(*args,**kwargs)
         self.room_id = Room.objects.all().count()
-        self.save()
-        self.thread.set_id(self.room_id)
+        thread.set_id(self.room_id)
+        self.thread_name = thread.name
+    
+    def get_id(self):
+        return self.room_id
+    
+    def get_name(self):
+        return self.thread_name
     
     def delete(self,*args,**kwargs):
         self.thread.stop()
