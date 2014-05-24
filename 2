@@ -289,10 +289,16 @@ def split_window(window,ratio=0.75):
 
 def urlopen(url,method='GET',params=None,timeout=2.0):
     res = None
-    if params is not None:
-        res = requests.request(method,url,data=params,params=params,timeout=timeout)
-    else:
-        res = requests.request(method,url,timeout=timeout)
+    if method == 'GET':
+        if params is None:
+            res = requests.get(url,timeout=timeout)
+        else:
+            res = requests.get(url,params=params,timeout=timeout)
+    elif method == 'POST':
+        if params is None:
+            res = requests.post(url,timeout=timeout)
+        else:
+            res = requests.post(url,params=params,timeout=timeout)
     return res
 
 def login(u_name,p_word,server='127.0.0.1:8000'):
@@ -327,7 +333,7 @@ def get_lobby(u_name,session_token,server='127.0.0.1:8000'):
         params={"u_name":u_name,"session_token":session_token}
     )
 
-def create(u_name,session_token,server='127.0.0.1:8000'):
+def create_room(u_name,session_token,server='127.0.0.1:8000'):
     # POST http://<server>/create_room/?u_name=<username>&session_token=<session token>
     return urlopen(
         "http://"+server+"/room_create/",
@@ -335,10 +341,10 @@ def create(u_name,session_token,server='127.0.0.1:8000'):
         params={"u_name":u_name,"session_token":session_token}
     )
 
-def join(u_name,session_token,room_id,server='127.0.0.1:8000'):
+def join_room(u_name,session_token,room_id,server='127.0.0.1:8000'):
     # POST http://<server>/join/?u_name=<username>&room_id=<room id>&session_token=<session token>
     return urlopen(
-        "http://"+server+"/join/",
+        "http://"+server+"/room_create/",
         method='POST',
         params={"u_name":u_name,"session_token":session_token,"room_id":room_id}
     )
@@ -347,7 +353,7 @@ def logout(u_name,session_token,server='127.0.0.1:8000'):
     # POST http://<server>/logout/?u_name=<username>&session_token=<session token>
     return urlopen(
         "http://"+server+"/logout/",
-        method='GET',
+        method='POST',
         params={"u_name":u_name,"session_token":session_token}
     )
 
@@ -407,7 +413,7 @@ while True:
     u_name = raw_input("Username: ")
     p_word = getpass.getpass()
 
-    res = None
+    #res = login(u_name,p_word)
     try:
         res = login(u_name,p_word)
         code = res.status_code
@@ -436,6 +442,7 @@ try:
     while True:
         res = get_lobby(USER_NAME,SESSION_TOKEN)
         code = res.status_code
+        option = 0
         options = {}
 
         out = ''
@@ -447,27 +454,26 @@ try:
             _json = res.json()
             out += "Rooms:\n"
             for room_id,occ in _json["rooms"].iteritems():
-                out += "<"+str(len(option))+" > Room"+str(room_id)+":"+occ+"\n"
-                options[len(options)] = "room:" + str(room_id)
+                out += "<"+str(option)+" > Room"+str(room_id)+":"+occ+"\n"
+                options[option] = room_id
+                option += 1
             out += "\n"
             out += "Users\n"
             for username,status in _json["users"].iteritems():
                 if status == 'online':
-                    out += "<"+str(len(options))+"> "+username+" " + status + "\n"
-                    options[len(options)] = "user:" + username
+                    out += "<"+str(option)+"> "+username+" " + status + "\n"
+                    options[option] = username
+                    option += 1
                 elif SHOW_OFFLINE and status == 'offline':
-                    out += "<"+str(len(options))+"> "+username+" "+status+"\n"
-                    options[len(options)] = username
+                    out += "<"+str(option+offline_count)+"> "+username+" "+status+"\n"
+                    options[option] = username
+                    option += 1
             out += "\n\n"
-            if SHOW_OFFLINE:
-                out += "<"+str(len(options))+"> Hide offline\n"
-            else:
-                out += "<"+str(len(options))+"> Show offline\n"
-            options[len(options)] = "toggle_offline"
-            out += "<"+str(len(options))+"> Logout\n"
-            options[len(options)] = "_logout"
-            out += "<"+str(len(options))+"> Refresh Lobby\n"
-            options[len(options)] = "_refresh"
+            out += "<"+str(option)+"> Show offline\n"
+            options[option] = "toggle_offline"
+            option += 1
+            out += "<"+str(option)+"> Logout\n"
+            options[option] = "_logout"
 
             out += "\n\nSelect which chat room you would like to join\n"
             out += "or which user you would like to chat with\n"
@@ -477,35 +483,16 @@ try:
             choice = raw_input('Choice: ')
 
             try:
-                if len(choice) > 0:
-                    idx = int(choice.strip())
-                    action = options[int(choice.strip())]
-                    if action == "_logout":
-                        res = logout(USER_NAME,SESSION_TOKEN)
-                        if res.status_code == 200:
-                            print "Logged out. See ya!"
-                            sys.exit()
-                        else:
-                            print "Logout failed, sorry you must stay!!!!"
-                    elif action == "toggle_offline":
-                        SHOW_OFFLINE = not SHOW_OFFLINE
-                    elif action == "_refresh":
-                        continue
-                    elif action == "_create":
-                        res = create(USER_NAME,SESSION_TOKEN)
-                        print res
-            except ValueError as e:
-                print choice + " is an invalid Choice"
-            except Exception as e:
+                action = options[int(choice.strip())]
+            except:
                 print choice + " is an invalid Choice"
 except Exception as e:
     write_err(e)
     print e, traceback.format_exc()
     sys.exit()
 finally:
-    res = logout(USER_NAME,SESSION_TOKEN)
-    if res.status_code != 200:
-        print "Server error",res.status_code,", user not successfully logged out.  No action required, this has been logged, you will be logged out when your session expires."
+    logout(USER_NAME,SESSION_TOKEN)
+
 
 def run_chat_room(addr):
     try:

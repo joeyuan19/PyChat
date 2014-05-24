@@ -16,6 +16,8 @@ import threading
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
 
+    
+
 def date_now():
     return timezone.now().strftime("%m/%d/%Y")
 
@@ -232,54 +234,48 @@ class Room(models.Model):
             self.delete()
 
 class ChatUser(models.Model):
-    name = models.CharField(max_length=64)
-    password = models.TextField(default="")
-    pword_freq = models.IntegerField(default=0)
-    session_token = models.CharField(max_length=16)
-
-    def __init__(self,name,password,*args,**kwargs):
-        super(ChatUser,self).__init__(*args,**kwargs)
-        self.pword_freq = len(password)
-        self.password = ''.join(str(i) + str(random_string(self.pword_freq)) for i in password)
-        self.name = name
-        self._loggedin = False
+    name = models.CharField(max_length=64,blank=True,null=True)
+    password = models.TextField(default="",blank=True,null=True)
+    pword_freq = models.IntegerField(default=0,blank=True)
+    session_token = models.CharField(max_length=16,blank=True,null=True,default="")
+    loggedin = models.BooleanField(default=False,blank=True)
+    
+    def create(self,*args,**kwargs):
+        if len(str(name)) == 0 or len(str(password)) == "": return
+        super(ChatUser,self).create(*args,**kwargs)
+        self.pword_freq = len(self.password)
+        self.password = ''.join(str(i) + str(random_string(self.pword_freq)) for i in self.password)
+        self.loggedin = False
         self.session_token = ''
-        self.last_seen = timezone.now()
 
     def login(self,password):
         if self.checkpword(password):
-            self._loggedin = True
+            self.loggedin = True
             self.session_token = random_string(16)
             self.last_seen = timezone.now()
+            self.save()
+            return self.session_token
         else:
-            self._loggedin = False
-            self.session_token = ''
-        return self.session_token
+            return ''
 
     def logout(self):
-        if self._loggedin:
-            self._loggedin = False
+        if self.loggedin:
+            self.loggedin = False
             self.session_token = ''
-    
-    def mark(self):
-        self.last_seen = timezone.now()
-    
-    def inactive(self):
-        return timezone.now() - self.last_seen > datetime.timedelta(hour=3)
+            self.save()
+            return True
+        else:
+            return False
     
     def isactive(self):
-        return self._loggedin
+        return self.loggedin
     
     def checkpword(self,check):
-        write_log(self.password,self.pword_freq)
         if self.pword_freq > 0 and len(check) != self.pword_freq:
             return False
         idx = 0
-        write_log("passed first test checking: ")
         for i in range(0,len(self.password),len(check)+1):
-            write_log("checking:",check[idx])
             if check[idx] != self.password[i]:
-                write_log("failed")
                 return False
             idx += 1
         return True

@@ -1,0 +1,20 @@
+Making it work
+==============
+[~] HTTP connection tests
+[ ] Socket connection tests
+[ ] Authentication
+[ ] Notifications
+    [ ] New Chat initiation
+
+
+Improvments
+=============
+[ ] Implement formatting
+[ ] Add <code> tags
+    [ ] Line numbers
+    [ ] Syntax highlighting
+    [ ] Import line snippets from existing code files
+[ ] Image to ascii support
+[ ] FTP file transfers
+[ ] Connection strength measurement
+
