@@ -1,6 +1,7 @@
 from django.conf.urls import patterns, include, url
 
 urlpatterns = patterns('',
+    url(r'^$','chat.views.test_view',name='test'),
     url(r'^login/','chat.views.login_view',name='login'),
     url(r'^logout/','chat.views.logout_view',name='logout'),
     url(r'^room_create/','chat.views.create_room_view',name='create'),

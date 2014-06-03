@@ -340,7 +340,7 @@ def create(u_name,session_token,server='127.0.0.1:8000'):
     # POST http://<server>/create_room/?u_name=<username>&session_token=<session token>
     return urlopen(
         "http://"+server+"/room_create/",
-        method='POST',
+        method='GET',
         params={"u_name":u_name,"session_token":session_token}
     )
 
@@ -366,7 +366,6 @@ def strip_headers(msg):
         return msg
     else:
         return matches[0]
-    
 
 SESSION_TOKEN = ''
 status_thread = None
@@ -407,7 +406,6 @@ SESSION_TOKEN = ''
 USER_NAME = ''
 CONNECTION_SPEED = 2.0
 
-
 print "\n\n\nWelcome to PyChat!"
 code = -1
 attempt = 0
@@ -415,16 +413,19 @@ while True:
     print "Please login:"
     u_name = raw_input("Username: ")
     p_word = getpass.getpass()
-
+    
     res = None
     try:
+        print "Logging in...", 
         res = login(u_name,p_word)
+        print "Session started\n\n\n"
         code = res.status_code
     except Exception as e:
+        print
         write_err(e)
     
     if code == 200:
-        print "Welcome " + u_name + "!"
+        print "Welcome " + u_name + "!\n\n\n"
         _json = res.json()
         SESSION_TOKEN = _json['session_token']
         USER_NAME = u_name
@@ -437,9 +438,7 @@ while True:
         print "Three failed attempts in a row, exiting..."
         sys.exit()
 
-
 SHOW_OFFLINE = False
-
 
 try:
     while True:
@@ -449,32 +448,49 @@ try:
 
         out = ''
         if code != 200:
-            out = "Error " + str(code) + ": " + strip_headers(res.text)
+            out = "Error "+str(code)+": "+strip_headers(res.text)
             print out
             sys.exit()
         else:
             _json = res.json()
-            out += "Rooms:\n"
+            if len(_json["rooms"]) > 0:
+                out += "Rooms:\n"
+            else:
+                out += "No rooms currently active\n"
             for room_id,occ in _json["rooms"].iteritems():
                 out += "<"+str(len(option))+" > Room"+str(room_id)+":"+occ+"\n"
-                options[len(options)] = "room:" + str(room_id)
+                options[len(options)] = "room:"+str(room_id)
             out += "\n"
-            out += "Users\n"
+            out += "<"+str(len(options))+"> Create new room\n"
+            options[len(options)] = "_create"
+            out += "\n"
+
+
+            user_list = ""
             for username,status in _json["users"].iteritems():
-                if status == 'online':
-                    out += "<"+str(len(options))+"> "+username+" " + status + "\n"
+                if username == USER_NAME:
+                    pass
+                elif status == 'online':
+                    user_list += "<"+str(len(options))+"> "+username+" ["+status+"]\n"
                     options[len(options)] = "user:" + username
                 elif SHOW_OFFLINE and status == 'offline':
-                    out += "<"+str(len(options))+"> "+username+" "+status+"\n"
+                    user_list += "<"+str(len(options))+"> "+username+" ["+status+"]\n"
                     options[len(options)] = username
+            if len(user_list) == 0:
+                out += "No users currently online"
+            else:
+                out += "Users:\n"
+                out += user_list
             out += "\n\n"
             if SHOW_OFFLINE:
                 out += "<"+str(len(options))+"> Hide offline\n"
             else:
                 out += "<"+str(len(options))+"> Show offline\n"
-            options[len(options)] = "toggle_offline"
+            options[len(options)] = "_toggle_offline"
+
             out += "<"+str(len(options))+"> Logout\n"
             options[len(options)] = "_logout"
+            
             out += "<"+str(len(options))+"> Refresh Lobby\n"
             options[len(options)] = "_refresh"
 
@@ -496,22 +512,31 @@ try:
                             sys.exit()
                         else:
                             print "Logout failed, sorry you must stay!!!!"
-                    elif action == "toggle_offline":
+                    elif action == "_toggle_offline":
                         SHOW_OFFLINE = not SHOW_OFFLINE
                     elif action == "_refresh":
                         continue
                     elif action == "_create":
                         res = create(USER_NAME,SESSION_TOKEN)
-                        print res
+                        if res.status_code == 200:
+                            _json = res.json()
+                            run_chat_room(tuple(_json["addr"]))
+                            
+                    elif action.startswith("user:"):
+                        pass # create a new room, notify user of desire to chat
+                    elif action.startswith("room:"):
+                        pass # join a room
             except ValueError as e:
                 print choice + " is an invalid Choice"
             except Exception as e:
                 print choice + " is an invalid Choice"
+            print "\n\n"
 except Exception as e:
     write_err(e)
     print e, traceback.format_exc()
     sys.exit()
 finally:
+    a = raw_input("aaa")
     res = logout(USER_NAME,SESSION_TOKEN)
     if res.status_code != 200:
         print "Server error",res.status_code,", user not successfully logged out.  No action required, this has been logged, you will be logged out when your session expires."

@@ -20,6 +20,9 @@ def write_err(err_name,err):
     msg += traceback.format_exc()
     write_log(msg)
 
+def test_view(request):
+    return HttpResponse("<h1>Hello World</h1><br><br><br>" + str(request))
+
 def authenticate(request,method='POST'):
     try:
         if method == 'POST':
@@ -45,7 +48,7 @@ def get_lobby(request):
                     lobby['users'][user.name] = "offline"
             rooms = Room.objects.all()
             for room in rooms:
-                lobby['rooms'][room.room_id] = room.get_users()
+                lobby['rooms'][room.room_id] = room.user_list()
             return HttpResponse(json.dumps(lobby),content_type='application/json')
         else:
             return HttpResponse('<h1>Invalid Session, please log in.</h1>',status=401)
@@ -89,10 +92,12 @@ def get_room_listing(request):
         return HttpResponse('<h1>Invalid request method</h1>',status=405)
 
 def create_room_view(request):
-    if request.method == 'POST':
-        if authenticate(request):
+    if request.method == 'GET':
+        if authenticate(request,'GET'):
             room = RoomManager()
             room.start()
+            while not room.is_alive():
+                pass
             room_info = {"room_id":room.room.room_id,"addr":room.addr()}
             return HttpResponse(json.dumps(room_info), content_type="application/json")
         else:

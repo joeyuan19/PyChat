@@ -6,6 +6,9 @@ import re
 import time
 import datetime
 import threading
+import select
+import socket
+
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
 #
@@ -89,9 +92,11 @@ class RoomManager(threading.Thread):
         (7,i) for i in range(0,8) if i != 7 or i != 5
     ]
     def __init__(self,*args,**kwargs):
-        super(RoomThread,self).__init__(*args,**kwargs)
+        super(RoomManager,self).__init__(*args,**kwargs)
         self._stop = threading.Event()
-        self.room = Room(self)
+        self.setDaemon(true)
+        self.start()
+        self.room = Room.create(thread=self)
         self.room.save()
         self.host = 'localhost'
         # set up sever socket
@@ -102,6 +107,10 @@ class RoomManager(threading.Thread):
         self.msg_queue = []
         self.user_color = {}
         self.mark_as_empty = None
+
+    def start(self,*args,**kwargs):
+        super(RoomManager, self).start(*args,**kwargs)
+        self.room.set_thread(self)
 
     def activity(self):
         self.last_active = timezone.now()
@@ -201,21 +210,33 @@ class RoomManager(threading.Thread):
         self.stop()
 
     def isactive(self):
-        if self.mark_as_empty is None:
-            if len(self.sockets) <= 1:
-                self.mark_as_empty = timezone.now()
-        else:
-            return timezone.now() - self.mark_as_empty >= 0
+        return True
+#        if self.mark_as_empty is None:
+#            if len(self.sockets) <= 1:
+#                self.mark_as_empty = timezone.now()
+#        else:
+#            return timezone.now() - self.mark_as_empty >= 
 
 class Room(models.Model):
     room_id = models.IntegerField(default=0,null=True,blank=True)
     thread_name = models.CharField(max_length=64,null=True,blank=True)
+    thread_ident = models.IntegerField(default=-1)
+    thread_addr_server = models.CharField(max_length=128,default="")
+    thread_addr_port = models.IntegerField(default=0)
     
-    def create(self,thread,*args,**kwargs):
-        super(Room, self).create(*args,**kwargs)
-        self.room_id = Room.objects.all().count()
-        thread.set_id(self.room_id)
+    @classmethod
+    def create(cls,thread=None,*args,**kwargs):
+        room = cls(*args,**kwargs)
+        room.room_id = Room.objects.all().count()
+        room.set_thread(thread)
+        return room
+    
+    def set_thread(self,thread):
         self.thread_name = thread.name
+        self.thread_ident = thread.ident
+        addr = thread.server_socket.getsockname()
+        self.thread_addr_server = addr[0]
+        self.thread_addr_port = addr[1]
     
     def get_id(self):
         return self.room_id
@@ -231,28 +252,58 @@ class Room(models.Model):
         return self.thread.addr()
 
     def isactive(self):
-        return self.thread.isactive()
+        return True
     
-    def user_list(self):
+    def get_users(self):
         return self.room.get_users()
     
     def close_room(self):
-        if not self.isactive():
-            self.thread.stop()
-            self.delete()
-
-class ChatUser(models.Model):
-    name = models.CharField(max_length=64,blank=True,null=True)
-    password = models.TextField(default="",blank=True,null=True)
-    pword_freq = models.IntegerField(default=0,blank=True)
-    session_token = models.CharField(max_length=16,blank=True,null=True,default="")
-    loggedin = models.BooleanField(default=False,blank=True)
+        for _thread in threading.enumerate():
+            print thread
+            if thread.name == self.thread_name:
+                thread.stop()
+        self.delete()
+"""
+class Notification(models.Model):
+    message = models.CharField(max_length=256)
+    date = models.DateTimeField()
+    sender = models.ForeignKey('ChatUser')
+    receiver = models.ForeignKey('ChatUser')
+    read = models.BooleanField(default=False)
     
     def create(self,*args,**kwargs):
+        super(Notification, self).create(*args,**kwargs)
+        self.date = timezone.now()
+
+    def mark_read(self):
+        self.read = True
+    
+    def mark_unread(self):
+        self.read = False
+
+    def read(self):
+        return self.read
+
+    def unread(self):
+        return not self.read
+"""
+
+
+class ChatUser(models.Model):
+    name = models.CharField(max_length=64)
+    password = models.TextField(default="",blank=True,null=True)
+    pword_freq = models.IntegerField(default=0)
+    session_token = models.CharField(max_length=16,default="")
+    loggedin = models.BooleanField(default=False)
+    
+    @classmethod
+    def create(self,*args,**kwargs):
         if len(str(name)) == 0 or len(str(password)) == "": return
+        write_log("BEFORE",self.password)
         super(ChatUser,self).create(*args,**kwargs)
         self.pword_freq = len(self.password)
         self.password = ''.join(str(i) + str(random_string(self.pword_freq)) for i in self.password)
+        write_log("AFTER",self.password)
         self.loggedin = False
         self.session_token = ''
 
@@ -287,4 +338,9 @@ class ChatUser(models.Model):
                 return False
             idx += 1
         return True
+
+    def clear_read_notifications(self):
+        for msg in self.notification_set.all():
+            if not msg.unread():
+                msg.delete()
 
