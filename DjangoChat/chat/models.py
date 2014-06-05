@@ -92,25 +92,28 @@ class RoomManager(threading.Thread):
         (7,i) for i in range(0,8) if i != 7 or i != 5
     ]
     def __init__(self,*args,**kwargs):
-        super(RoomManager,self).__init__(*args,**kwargs)
+        print "create"
         self._stop = threading.Event()
-        self.setDaemon(true)
-        self.start()
-        self.room = Room.create(thread=self)
-        self.room.save()
         self.host = 'localhost'
         # set up sever socket
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #self.server_socket.bind(('localhost',0))
         self.server_socket.listen(self.CONNECT_LIMIT)
         # Initiate Socket List
         self.sockets = [(self.server_socket,None)]
         self.msg_queue = []
         self.user_color = {}
         self.mark_as_empty = None
-
-    def start(self,*args,**kwargs):
-        super(RoomManager, self).start(*args,**kwargs)
-        self.room.set_thread(self)
+        self.room = Room.create()
+        self.room.save()
+        super(RoomManager,self).__init__(*args,**kwargs)
+        self.setDaemon(True)
+        self.start()
+        print "Thread started"
+        for _t in threading.enumerate():
+            print "thread",_t
+            print "ident",_t.ident
+            print "name",_t.name
 
     def activity(self):
         self.last_active = timezone.now()
@@ -133,6 +136,7 @@ class RoomManager(threading.Thread):
         return self._stop.isSet()
 
     def run(self):
+        self.room.set_thread(self)
         while not self.isstopped() and self.isactive():
             rsockets, wsockets, errsockets = select.select([sock for sock,user in self.sockets],[],[])
             for sock in rsockets:
@@ -140,7 +144,7 @@ class RoomManager(threading.Thread):
                     new_conn, new_addr = sock.accept()
                     user = new_conn.recv(64)
                     if not user:
-                        self.connect_user(user, new_sock)
+                        self.connect_user(user, new_conn)
                     else:
                         new_conn.close()
                 else:
@@ -182,7 +186,7 @@ class RoomManager(threading.Thread):
                 sock.close()
         
     def get_users(self):
-        return ', '.join(user.name for sock,user in self.sockets)
+        return ', '.join(user.name for sock,user in self.sockets if sock != self.server_socket)
 
     def disconnect_user(self,user=None,sock=None,index=None):
         if index is not None:
@@ -225,10 +229,9 @@ class Room(models.Model):
     thread_addr_port = models.IntegerField(default=0)
     
     @classmethod
-    def create(cls,thread=None,*args,**kwargs):
+    def create(cls,*args,**kwargs):
         room = cls(*args,**kwargs)
         room.room_id = Room.objects.all().count()
-        room.set_thread(thread)
         return room
     
     def set_thread(self,thread):
@@ -237,6 +240,7 @@ class Room(models.Model):
         addr = thread.server_socket.getsockname()
         self.thread_addr_server = addr[0]
         self.thread_addr_port = addr[1]
+        self.save()
     
     def get_id(self):
         return self.room_id
@@ -249,45 +253,35 @@ class Room(models.Model):
         super(Room, self).delete(*args,**kwargs)
     
     def addr(self):
-        return self.thread.addr()
+        return self.thread().addr()
 
     def isactive(self):
         return True
     
+    def user_list(self):
+        return self.get_users()
+
+    def thread(self):
+        _thread = None
+        for thread in threading.enumerate():
+            if thread.ident == self.thread_ident:
+                _thread = thread
+                break
+        return _thread
+    
+    def delete(self,*args,**kwargs):
+        self.close_room()
+        super(Room, self).delete(*args,**kwargs)
+
     def get_users(self):
-        return self.room.get_users()
+        _thread = self.thread()
+        if _thread is None:
+            return ''
+        return _thread.get_users()
     
     def close_room(self):
-        for _thread in threading.enumerate():
-            print thread
-            if thread.name == self.thread_name:
-                thread.stop()
+        self.thread().stop()
         self.delete()
-"""
-class Notification(models.Model):
-    message = models.CharField(max_length=256)
-    date = models.DateTimeField()
-    sender = models.ForeignKey('ChatUser')
-    receiver = models.ForeignKey('ChatUser')
-    read = models.BooleanField(default=False)
-    
-    def create(self,*args,**kwargs):
-        super(Notification, self).create(*args,**kwargs)
-        self.date = timezone.now()
-
-    def mark_read(self):
-        self.read = True
-    
-    def mark_unread(self):
-        self.read = False
-
-    def read(self):
-        return self.read
-
-    def unread(self):
-        return not self.read
-"""
-
 
 class ChatUser(models.Model):
     name = models.CharField(max_length=64)
@@ -297,15 +291,17 @@ class ChatUser(models.Model):
     loggedin = models.BooleanField(default=False)
     
     @classmethod
-    def create(self,*args,**kwargs):
-        if len(str(name)) == 0 or len(str(password)) == "": return
-        write_log("BEFORE",self.password)
-        super(ChatUser,self).create(*args,**kwargs)
-        self.pword_freq = len(self.password)
-        self.password = ''.join(str(i) + str(random_string(self.pword_freq)) for i in self.password)
-        write_log("AFTER",self.password)
-        self.loggedin = False
-        self.session_token = ''
+    def create(cls,*args,**kwargs):
+        if len(str(kwargs['name'])) == 0 or len(str(kwargs['password'])) == 0: return
+        password = kwargs['password']
+        name = kwargs['name']
+        new_user = cls(*args,**kwargs)
+        new_user.name = name
+        new_user.pword_freq = len(password)
+        new_user.password = ''.join(str(i) + str(random_string(new_user.pword_freq)) for i in password)
+        new_user.loggedin = False
+        new_user.session_token = ''
+        return new_user
 
     def login(self,password):
         if self.checkpword(password):
