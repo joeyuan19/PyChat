@@ -6,6 +6,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from chat.models import RoomManager, Room, ChatUser
 import json
 import traceback
+import threading
 
 def time_now():
     return timezone.now().strftime("%H:%M:%S")
@@ -20,6 +21,9 @@ def write_err(err_name,err):
     msg += traceback.format_exc()
     write_log(msg)
 
+def test_view(request):
+    return HttpResponse("<h1>Hello World</h1><br><br><br>" + str(request))
+
 def authenticate(request,method='POST'):
     try:
         if method == 'POST':
@@ -28,6 +32,7 @@ def authenticate(request,method='POST'):
         elif method == 'GET':
             u_name = request.GET['u_name']
             session_token = request.GET['session_token']
+        write_log(u_name,session_token,ChatUser.objects.get(name=u_name).session_token)
         return ChatUser.objects.get(name=u_name).session_token == session_token
     except Exception as e:
         write_err("AuthenticateError",e)
@@ -45,7 +50,7 @@ def get_lobby(request):
                     lobby['users'][user.name] = "offline"
             rooms = Room.objects.all()
             for room in rooms:
-                lobby['rooms'][room.room_id] = room.get_users()
+                lobby['rooms'][room.room_id] = room.user_list()
             return HttpResponse(json.dumps(lobby),content_type='application/json')
         else:
             return HttpResponse('<h1>Invalid Session, please log in.</h1>',status=401)
@@ -89,11 +94,18 @@ def get_room_listing(request):
         return HttpResponse('<h1>Invalid request method</h1>',status=405)
 
 def create_room_view(request):
-    if request.method == 'POST':
-        if authenticate(request):
+    if request.method == 'GET':
+        if authenticate(request,'GET'):
             room = RoomManager()
-            room.start()
-            room_info = {"room_id":room.room.room_id,"addr":room.addr()}
+            while not room.is_alive():
+                pass
+            _addr = room.addr()
+            room_info = {"room_id":room.room.room_id,"addr":{"port":_addr[1],"host":_addr[0]}}
+            print "after initialization"
+            for _t in threading.enumerate():
+                print "thread",_t
+                print "ident",_t.ident
+                print "name",_t.name
             return HttpResponse(json.dumps(room_info), content_type="application/json")
         else:
             return HttpResponse('<h1>Invalid Session, please log in.</h1>',status=401)

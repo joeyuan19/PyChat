@@ -1,13 +1,14 @@
-import curses
-import threading
-import time
-import random
-import datetime
-import getpass
-import requests
-import sys
-import traceback
 import re
+import sys
+import time
+import curses
+import random
+import socket
+import getpass
+import datetime
+import requests
+import threading
+import traceback
 
 # Debug functions
 
@@ -177,7 +178,7 @@ class StatusThread(threading.Thread):
 
 class MessageThread(threading.Thread):
     RECV_SIZE = 2048
-    def __init__(self,server_addr,client_addr,window,message_history=[],*args,**kwargs):
+    def __init__(self,window,server_addr,client_addr=('localhost',0),message_history=[],*args,**kwargs):
         super(MessageThread, self).__init__(*args,**kwargs)
         self.window = window
         self._stop = threading.Event()
@@ -185,8 +186,9 @@ class MessageThread(threading.Thread):
         self.partial_messages = []
         self.server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         self.server_socket.connect(server_addr)
-        self.server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        self.server_socket.connect(client_addr)
+        self.server_socket.send(USER_NAME)
+        self.client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        self.client_socket.connect(client_addr)
         self.sockets = [self.server_socket, self.client_socket]
     
     def run(self):
@@ -294,6 +296,59 @@ def split_window(window,ratio=0.75):
     status = window.derwin(height-1,0)
     return log, chat, status
 
+def run_chat_room(addr):
+    try:
+        print addr
+        window = curses_init()
+        log, chat, status = split_window(window)
+
+        log.leaveok(1)
+        status.leaveok(1)
+
+        # Status Handler
+        status_thread = StatusThread(status,status_msg)
+        status_thread.start()
+
+        # Message Send/Receive
+        message_thread = MessageThread(log,addr)
+        message_thread.start()
+
+        while True:
+            # Log Display
+            log.erase()
+            display_chat_log(log,chat_log)
+            log.refresh()
+
+            status.erase()
+            display_status(status,0,0,status_msg)
+            status.refresh()
+
+            # Message Prep Display
+            chat.erase()
+            display_div(chat)
+            display_chat_msg(chat,chat_msg)
+            chat.refresh()
+            action,c = get_user_action(window)
+            if action == "send":
+                chat_log.append((USERS[0],"derp o'clock",chat_msg.strip()))
+                chat_msg = ""
+            elif action == "delr":
+                chat_msg = chat_msg[:-1]
+            elif action == "type":
+                chat_msg += str(chr(c))
+        curses.endwin()
+        status_thread.stop()
+    except KeyboardInterrupt:
+        if curses:
+            curses.endwin()
+        if status_thread:
+            status_thread.stop()
+    finally:
+        if curses:
+            curses.endwin()
+        if status_thread:
+            status_thread.stop()
+    status_thread.stop()
 # URL HANDLING
 
 def urlopen(url,method='GET',params=None,timeout=2.0):
@@ -340,7 +395,7 @@ def create(u_name,session_token,server='127.0.0.1:8000'):
     # POST http://<server>/create_room/?u_name=<username>&session_token=<session token>
     return urlopen(
         "http://"+server+"/room_create/",
-        method='POST',
+        method='GET',
         params={"u_name":u_name,"session_token":session_token}
     )
 
@@ -366,7 +421,6 @@ def strip_headers(msg):
         return msg
     else:
         return matches[0]
-    
 
 SESSION_TOKEN = ''
 status_thread = None
@@ -406,7 +460,7 @@ MODE_INSERT = 0
 SESSION_TOKEN = ''
 USER_NAME = ''
 CONNECTION_SPEED = 2.0
-
+HOST_SERVER = '127.0.0.1'
 
 print "\n\n\nWelcome to PyChat!"
 code = -1
@@ -415,21 +469,25 @@ while True:
     print "Please login:"
     u_name = raw_input("Username: ")
     p_word = getpass.getpass()
-
+    
     res = None
     try:
+        print "Logging in...", 
         res = login(u_name,p_word)
         code = res.status_code
     except Exception as e:
+        print
         write_err(e)
     
     if code == 200:
-        print "Welcome " + u_name + "!"
+        print "Session started\n\n\n"
+        print "Welcome " + u_name + "!\n\n\n"
         _json = res.json()
         SESSION_TOKEN = _json['session_token']
         USER_NAME = u_name
         break
     else:
+        print
         print "Error",code,strip_headers(res.text)
         attempt += 1
 
@@ -437,9 +495,7 @@ while True:
         print "Three failed attempts in a row, exiting..."
         sys.exit()
 
-
 SHOW_OFFLINE = False
-
 
 try:
     while True:
@@ -449,32 +505,49 @@ try:
 
         out = ''
         if code != 200:
-            out = "Error " + str(code) + ": " + strip_headers(res.text)
+            out = "Error "+str(code)+": "+strip_headers(res.text)
             print out
             sys.exit()
         else:
             _json = res.json()
-            out += "Rooms:\n"
+            if len(_json["rooms"]) > 0:
+                out += "Rooms:\n"
+            else:
+                out += "No rooms currently active\n"
             for room_id,occ in _json["rooms"].iteritems():
-                out += "<"+str(len(option))+" > Room"+str(room_id)+":"+occ+"\n"
-                options[len(options)] = "room:" + str(room_id)
+                out += "<"+str(len(options))+"> Room"+str(room_id)+":"+occ+"\n"
+                options[len(options)] = "room:"+str(room_id)
             out += "\n"
-            out += "Users\n"
+            out += "<"+str(len(options))+"> Create new room\n"
+            options[len(options)] = "_create"
+            out += "\n"
+
+
+            user_list = ""
             for username,status in _json["users"].iteritems():
-                if status == 'online':
-                    out += "<"+str(len(options))+"> "+username+" " + status + "\n"
+                if username == USER_NAME:
+                    pass
+                elif status == 'online':
+                    user_list += "<"+str(len(options))+"> "+username+" ["+status+"]\n"
                     options[len(options)] = "user:" + username
                 elif SHOW_OFFLINE and status == 'offline':
-                    out += "<"+str(len(options))+"> "+username+" "+status+"\n"
+                    user_list += "<"+str(len(options))+"> "+username+" ["+status+"]\n"
                     options[len(options)] = username
+            if len(user_list) == 0:
+                out += "No users currently online"
+            else:
+                out += "Users:\n"
+                out += user_list
             out += "\n\n"
             if SHOW_OFFLINE:
                 out += "<"+str(len(options))+"> Hide offline\n"
             else:
                 out += "<"+str(len(options))+"> Show offline\n"
-            options[len(options)] = "toggle_offline"
+            options[len(options)] = "_toggle_offline"
+
             out += "<"+str(len(options))+"> Logout\n"
             options[len(options)] = "_logout"
+            
             out += "<"+str(len(options))+"> Refresh Lobby\n"
             options[len(options)] = "_refresh"
 
@@ -496,75 +569,35 @@ try:
                             sys.exit()
                         else:
                             print "Logout failed, sorry you must stay!!!!"
-                    elif action == "toggle_offline":
+                    elif action == "_toggle_offline":
                         SHOW_OFFLINE = not SHOW_OFFLINE
                     elif action == "_refresh":
                         continue
                     elif action == "_create":
                         res = create(USER_NAME,SESSION_TOKEN)
-                        print res
+                        if res.status_code == 200:
+                            _json = res.json()
+                            run_chat_room((HOST_SERVER,_json["addr"]["port"]))
+                        else:
+                            print res
+                    elif action.startswith("user:"):
+                        pass # create a new room, notify user of desire to chat
+                    elif action.startswith("room:"):
+                        pass # join a room
             except ValueError as e:
                 print choice + " is an invalid Choice"
             except Exception as e:
                 print e
+                raise
+            print "\n\n"
 except Exception as e:
     write_err(e)
     print e, traceback.format_exc()
     sys.exit()
 finally:
+    raw_input("press enter to logout and quit")
     res = logout(USER_NAME,SESSION_TOKEN)
     if res.status_code != 200:
         print "Server error",res.status_code,", user not successfully logged out.  No action required, this has been logged, you will be logged out when your session expires."
 
-def run_chat_room(addr):
-    try:
-        window = curses_init()
-        log, chat, status = split_window(window)
-
-        log.leaveok(1)
-        status.leaveok(1)
-
-        # Status Handler
-        status_thread = StatusThread(status,status_msg)
-        status_thread.start()
-
-        # Message Send/Receive
-        message_thread = MessageThread(addr)
-        message_thread.start()
-
-        while True:
-            # Log Display
-            log.erase()
-            display_chat_log(log,chat_log)
-            log.refresh()
-
-            status.erase()
-            display_status(status,0,0,status_msg)
-            status.refresh()
-
-            # Message Prep Display
-            chat.erase()
-            display_div(chat)
-            display_chat_msg(chat,chat_msg)
-            chat.refresh()
-            action,c = get_user_action(window)
-            if action == "send":
-                chat_log.append((USERS[0],"derp o'clock",chat_msg.strip()))
-                chat_msg = ""
-            elif action == "delr":
-                chat_msg = chat_msg[:-1]
-            elif action == "type":
-                chat_msg += str(chr(c))
-        curses.endwin()
-        status_thread.stop()
-    except KeyboardInterrupt:
-        if curses:
-            curses.endwin()
-        if status_thread:
-            status_thread.stop()
-    finally:
-        if curses:
-            curses.endwin()
-        if status_thread:
-            status_thread.stop()
-    status_thread.stop()
+    
