@@ -506,7 +506,7 @@ try:
             except ValueError as e:
                 print choice + " is an invalid Choice"
             except Exception as e:
-                print choice + " is an invalid Choice"
+                print e
 except Exception as e:
     write_err(e)
     print e, traceback.format_exc()
