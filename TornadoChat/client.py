@@ -2,10 +2,9 @@ import tornado.ioloop
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest, HTTPError
 
 import traceback
-import password
+import getpass
 import json
 import time
-
 
 
 class InvalidLoginError(Exception):
@@ -20,12 +19,12 @@ def res_handler(response):
         print response.body
 
 class ChatClient(object):
-    def __init__(self,username,server="127.0.0.1:8000"):
+    def __init__(self,server="127.0.0.1:8000"):
         self.http_client = AsyncHTTPClient()
         self.server = server
-        self.username = username
         self._loggedin = False
         self.session_token = ""
+        self.username = ""
         
     def close(self):
         self.http_client.close()
@@ -59,8 +58,9 @@ class ChatClient(object):
     def fetch(self,request,callback):
         return self.http_client.fetch(request,callback)
     
-    def login(self,password):
-        u_name = raw_input("Username: ")
+    def login(self):
+        self.username = raw_input("Username: ")
+        password = getpass.getpass()
         req = self.request('login',
             headers={
                 "CHAT_UNAME":self.username,
@@ -86,33 +86,38 @@ class ChatClient(object):
             self._loggedin = False
 
     def logout(self):
-        req = self.request('login',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
+        req = self.request('logout',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
         return self.fetch(req,handle_request)
     
     def get_lobby(self):
-        req = self.request('login',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
-        return self.fetch(req,handle_request)
+        req = self.request('lobby',headers={"CHAT_UNAME":self.username,"CHAT_SESSION_TOKEN":self.session_token})
+        return self.fetch(req,self.get_lobby_cb)
 
+    def get_lobby_cb(self,response):
+        if response.error:
+            print "Error fetching lobby: <"+str(response.code)+">",response.reason
+        else:
+            print response.body
+            
     def join_room(self):
-        req = self.request('login',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
+        req = self.request('join',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
         return self.fetch(req,handle_request)
     
     def leave_room(self):
-        req = self.request('login',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
+        req = self.request('leave',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
         return self.fetch(req,handle_request)
     
     def create_room(self):
-        req = self.request('login',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
+        req = self.request('create',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
         return self.fetch(req,handle_request)
 
 
 try:
     client = None
     client = ChatClient()
-    client.login("password")
-    
-    
-    
+    client.login()
+    client.get_lobby()
+    client.get_lobby()
     tornado.ioloop.IOLoop.instance().start()
 except HTTPError as e:
     print "HTTPError:",e
