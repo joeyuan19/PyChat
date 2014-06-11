@@ -1,5 +1,5 @@
 import tornado.ioloop
-from tornado.httpclient import AsyncHTTPClient, HTTPRequest, HTTPError
+from tornado.httpclient import HTTPClient, HTTPRequest, HTTPError
 
 import traceback
 import getpass
@@ -20,7 +20,7 @@ def res_handler(response):
 
 class ChatClient(object):
     def __init__(self,server="127.0.0.1:8000"):
-        self.http_client = AsyncHTTPClient()
+        self.http_client = HTTPClient()
         self.server = server
         self._loggedin = False
         self.session_token = ""
@@ -42,21 +42,20 @@ class ChatClient(object):
             chat_room_id="",
             *args,**kwargs):
         if "headers" in kwargs:
-            headers = kwargs["headers"]
             if "CHAT_SESSION_TOKEN" in kwargs["headers"]:
                 pass
             else:
-                headers["CHAT_SESSION_TOKEN"] = self.session_token
+                kwargs["headers"]["CHAT_SESSION_TOKEN"] = self.session_token
         else:
-            headers = {"CHAT_SESSION_TOKEN":self.session_token}
+            kwargs["headers"] = {"CHAT_SESSION_TOKEN":self.session_token}
         if not relative_url.startswith('/'):
             relative_url = '/' + relative_url
         if not relative_url.endswith('/'):
             relative_url = relative_url + '/'
         return HTTPRequest(self.server_url()+relative_url,*args,**kwargs)
     
-    def fetch(self,request,callback):
-        return self.http_client.fetch(request,callback)
+    def fetch(self,request):
+        return self.http_client.fetch(request)
     
     def login(self):
         self.username = raw_input("Username: ")
@@ -67,7 +66,8 @@ class ChatClient(object):
                 "CHAT_PWORD":password
             }
         )
-        self.fetch(req,self.login_cb)
+        print "logging in...",
+        self.login_cb(self.fetch(req))
     
     def login_cb(self,response):
         try:
@@ -84,6 +84,8 @@ class ChatClient(object):
             print e
             print traceback.format_exc()
             self._loggedin = False
+        finally:
+            print "Logged in:",len(self.session_token)==16,"Token:",self.session_token
 
     def logout(self):
         req = self.request('logout',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
@@ -91,7 +93,7 @@ class ChatClient(object):
     
     def get_lobby(self):
         req = self.request('lobby',headers={"CHAT_UNAME":self.username,"CHAT_SESSION_TOKEN":self.session_token})
-        return self.fetch(req,self.get_lobby_cb)
+        self.get_lobby_cb(self.fetch(req))
 
     def get_lobby_cb(self,response):
         if response.error:
@@ -116,9 +118,6 @@ try:
     client = None
     client = ChatClient()
     client.login()
-    client.get_lobby()
-    client.get_lobby()
-    tornado.ioloop.IOLoop.instance().start()
 except HTTPError as e:
     print "HTTPError:",e
 except Exception as e:
