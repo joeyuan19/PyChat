@@ -3,34 +3,35 @@ import tornado.web
 import tornado.httpserver
 
 import json
+import random
 import traceback
 
-USERS = [
-        {
-            'username':'joe',
-            'password':'password',
-            'session_token':''
-        },
-    ]
+from chat_db import ChatUser
 
+SESSION_CACHE = {}
 
 def get_user(username):
-    users = USERS
-    user = [user for user in users if user['username'] == username]
-    if len(user) > 0:
-        return user[0]
-    else:
-        return None
-
+    if username in SESSION_CACHE:
+        return SESSION_CACHE[username
+    return ChatUser.get_user(username)
 
 def authenticate(username,password):
     user = get_user(username)
-    return user is not None and user['password'] == password
+    return user is not None and user.login(password)
+
+def random_char():
+    return chr(random.choice(range(33,95)+range(96,127)))
+
+def random_string(n):
+    s = ""
+    for i in range(n):
+        s += random_char()
+    return s
 
 def get_new_token():
-    return "a"*16
+    return random_string(16)
 
-def jsonify(json_object):
+def serialize(json_object):
     return json.dumps(json_object,separators=(",",":"))
 
 class LoginHandler(tornado.web.RequestHandler):
@@ -40,15 +41,15 @@ class LoginHandler(tornado.web.RequestHandler):
             print req
             if authenticate(req.headers["CHAT_UNAME"],req.headers["CHAT_PWORD"]):
                 user = get_user(req.headers["CHAT_UNAME"])
-                token = user['session_token']
+                token = user.session_token
                 if len(token) == 0:
                     token = get_new_token()
                 _json = {
                     "session_token":token
                 }
-                USERS[USERS.index(user)]["session_token"] = token
-                self.write(jsonify(_json))
-                print "Logged in",user['username']
+                SESSION_CACHE[user.username] = user
+                self.write(serialize(_json))
+                print "Logged in",user.username
             else:
                 self.set_status(403,"Invalid Login Information")
         except Exception as e:
@@ -63,9 +64,13 @@ class LobbyHandler(tornado.web.RequestHandler):
     def get(self):
         req = self.request
         user = get_user(req.headers["CHAT_UNAME"])
-        print user,req.headers["CHAT_SESSION_TOKEN"]
-        if user is not None and len(user['session_token']) == 16 and req.headers["CHAT_SESSION_TOKEN"] == user['session_token']:
-            self.write("Lobby")
+        if user is not None and req.headers["CHAT_SESSION_TOKEN"] == user.session_token:
+            _json = {
+                "rooms":[],
+                "users":[]
+            }
+            for
+            self.write(serialize(_json))
         else:
             self.set_status(403,"Invalid session, please login")
 
