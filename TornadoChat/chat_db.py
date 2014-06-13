@@ -15,7 +15,8 @@ class ChatUser(object):
 
     @classmethod
     def get_all(cls):
-        pass
+        users = get_all_users()
+
     @classmethod
     def create_user(cls,username,password):
         if check_for_user(username):
@@ -112,6 +113,15 @@ def _get_user(cur,username):
     cur.execute(_sql,{"username":username})
     return cur.fetchone()
 
+def get_all_users():
+    return execute(_get_all_users)
+
+def _get_all_users(cur):
+    _sql = """
+    SELECT * FROM users
+    """
+    cur.excute(_sql)
+    return cur.fetchall()
 def check_for_user(username):
     return execute(_check_for_user,username)
 

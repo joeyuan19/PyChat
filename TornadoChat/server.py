@@ -12,7 +12,7 @@ SESSION_CACHE = {}
 
 def get_user(username):
     if username in SESSION_CACHE:
-        return SESSION_CACHE[username
+        return SESSION_CACHE[username]
     return ChatUser.get_user(username)
 
 def authenticate(username,password):
@@ -69,14 +69,13 @@ class LobbyHandler(tornado.web.RequestHandler):
                 "rooms":[],
                 "users":[]
             }
-            for
             self.write(serialize(_json))
         else:
             self.set_status(403,"Invalid session, please login")
 
 class JoinHandler(tornado.web.RequestHandler):
     def get(self):
-        self.write("Join")
+        self.write("join")
 
 class LeaveHandler(tornado.web.RequestHandler):
     def get(self):
