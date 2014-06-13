@@ -69,7 +69,7 @@ class LobbyHandler(tornado.web.RequestHandler):
                 "rooms":[],
                 "users":[]
             }
-            for
+            for user in ChatUser.getall()
             self.write(serialize(_json))
         else:
             self.set_status(403,"Invalid session, please login")

@@ -15,7 +15,8 @@ class ChatUser(object):
 
     @classmethod
     def get_all(cls):
-        pass
+        return [get_all_users()
+        
     @classmethod
     def create_user(cls,username,password):
         if check_for_user(username):
