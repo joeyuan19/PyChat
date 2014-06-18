@@ -1,6 +1,8 @@
 import tornado.ioloop
 from tornado.httpclient import HTTPClient, HTTPRequest, HTTPError
 
+from display import ChatDisplayManager
+
 import traceback
 import getpass
 import json
