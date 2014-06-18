@@ -11,14 +11,6 @@ import sys
 class InvalidLoginError(Exception):
     pass
 
-def res_handler(response):
-    print "response"
-    if response.error:
-        print "Error:",response.error
-    else:
-        print 'called'
-        print response.body
-
 class ChatClient(object):
     def __init__(self,server="127.0.0.1:8000"):
         self.http_client = HTTPClient()
@@ -68,11 +60,8 @@ class ChatClient(object):
             }
         )
         print "logging in...",
-        self.login_cb(self.fetch(req))
+        response = self.fetch(req)
         print ""
-        return self._loggedin
-    
-    def login_cb(self,response):
         try:
             if response.error:
                 print "LoginError:",response.code,response.error
@@ -87,6 +76,7 @@ class ChatClient(object):
             print e
             print traceback.format_exc()
             self._loggedin = False
+        return self._loggedin
 
     def logout(self):
         req = self.request('logout',
@@ -135,6 +125,7 @@ def get_pad_length(li):
     for it in li:
         mx = max(mx,len(it))
     return mx
+
 
 try:
     client = None
