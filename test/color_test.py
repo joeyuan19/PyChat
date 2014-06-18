@@ -36,7 +36,6 @@ def assign_color_pairs():
             c += 1
     return c, ci
 
-
 c,ci = assign_color_pairs()
 w.nodelay(1)
 
