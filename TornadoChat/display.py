@@ -1,14 +1,19 @@
-import re
-import sys
 import time
+import json
 import curses
-import random
 import socket
-import getpass
+import signal
 import datetime
-import requests
 import threading
 import traceback
+
+# To Do
+# 
+# 1. Make it work
+# 2. Add formatting
+# 3. code snippets
+# 4. ascii image sharing
+
 
 # Debug functions
 
@@ -68,6 +73,20 @@ def fill_middle(msg,trailer,width):
         return msg + " "*(width - len(msg + trailer)-1) + trailer
     return msg + trailer
 
+def sort_on_index(msgs):
+    temp = [i for i in msgs]
+    while True:
+        swap = False
+        for i in range(len(temp)-1):
+            if temp[i]["idx"] > temp[i+1]["idx"]:
+                _temp = temp[i]
+                temp[i] = temp[i+1]
+                temp[i+1] = _temp
+                swap = True
+        if not swap:
+            return temp
+
+            
 def join_messages(msgs):
     _msg = {
         "body":"",
@@ -75,19 +94,20 @@ def join_messages(msgs):
         "time":"",
         "frmt":[]
     }
+    msgs = sort_on_index(msgs)
     for msg in msgs:
         _msg["body"] += msg["body"]
         _msg["frmt"] += msg["frmt"]
     _msg["name"] = msg["name"]
-    _msg["time"] = msg["frmt"]
+    _msg["time"] = msg["time"]
     return _msg
 
 def serialize(_json):
-    return json.dumps(_json,separator=(",",":"))
+    return json.dumps(_json,separators=(",",":"))
 
 
 class StatusThread(threading.Thread):
-    def __init__(self,manager,window,status_msg,*args,**kwargs):
+    def __init__(self,manager,*args,**kwargs):
         super(StatusThread,self).__init__(*args,**kwargs)
         self.last_index = 0
         self.manager = manager
@@ -99,7 +119,7 @@ class StatusThread(threading.Thread):
             time.sleep(0.9)
             
     def display(self):
-        self.last_index = manager.display_status_msg(self.last_index)
+        self.last_index = self.manager.display_status_msg(self.last_index)
     
     def stop(self):
         self._stop.set()
@@ -109,9 +129,8 @@ class StatusThread(threading.Thread):
 
 class MessageThread(threading.Thread):
     RECV_SIZE = 4096
-    def __init__(self,manager,window,server_addr,client_addr,*args,**kwargs):
+    def __init__(self,manager,server_addr,*args,**kwargs):
         super(MessageThread, self).__init__(*args,**kwargs)
-        self.window = window
         self.manager = manager
         self._stop = threading.Event()
         self.partial_messages = []
@@ -124,6 +143,8 @@ class MessageThread(threading.Thread):
         }
         join_request = serialize(_json) 
         self.server_socket.send(join_request)
+        room_info = self.server_socket.recv(self.RECV_SIZE)
+        manager.set_room_info(room_info)
         self.client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         self.client_socket.connect(client_addr)
         self.sockets = [self.server_socket]
@@ -141,10 +162,20 @@ class MessageThread(threading.Thread):
                         write_log("ServerReadError:",e)
                         self.stop()
                         break
-            _next = self.get_next_msg()
-            if _next is not None:
-                self.server_socket.send(_next)
+            for sock in w_sock:
+                _next = self.get_next_msg()
+                if _next is not None:
+                    self.sock.send(_next)
         self.disconnect()
+    
+    def send(self,msg):
+        self.msg_queue.append(msg)
+
+    def get_next_msg(self):
+        if len(self.msg_queue) > 0:
+            return self.msg_queue.pop(0)
+        return None
+
     
     def _process_partial_message(self,msg):
         for partial_message in self.partial_messages:
@@ -175,7 +206,7 @@ class MessageThread(threading.Thread):
                 self._process_partial_message(msg)
             manager.add_msg(msg)
         elif msg["verb"] == "join":
-            manager.add_user("verb")
+            manager.add_user(msg)
 
 def split_window(window,ratio=0.75):
     height,width = getwindowyx(window)
@@ -229,25 +260,29 @@ class ChatDisplayManager(object):
         6: curses.COLOR_RED,
         7: curses.COLOR_BLACK,
     }
+    status = ""
     status_msg = ""
     chat_msg = ""
     chat_log = []
+    
+    def __init__(self,session_token):
+        self.SESSION_TOKEN = session_token
 
-    def curses_init():
+    def curses_init(self):
         self.window = curses.initscr()
         self.window.nodelay(1)
         self.window.keypad(1)
         curses.noecho()
         curses.cbreak()
-        init_colors()
+        self.init_colors()
     
-    def init_colors():
+    def init_colors(self):
         self.HAS_COLORS = curses.has_colors()
-        self.CAN_CHANGE_COLOR = curses.can_change_colors()
-        if self.COLORS:
+        self.CAN_CHANGE_COLOR = curses.can_change_color()
+        if self.HAS_COLORS:
             curses.start_color()
     
-    def addstr(window,y,x,string,formatting=None):
+    def addstr(self,window,y,x,string,formatting=None):
         if formatting is None or not self.HAS_COLORS:
             self._addstr(window,y,x,string)
         else:
@@ -260,7 +295,7 @@ class ChatDisplayManager(object):
             self._addstr(window,y,x+last[1],_string)
             
     
-    def _addstr(window,y,x,s,c=None):
+    def _addstr(self,window,y,x,s,c=None):
         if self.HAS_COLORS and c is not None:
             curses.init_pair(1,self.COLOR_INDEX[c[0]],self.COLOR_INDEX[c[1]])
             window.addstr(y,x,s,curses.color_pair(1))
@@ -269,10 +304,12 @@ class ChatDisplayManager(object):
             
     def display_status_msg(self,idx):
         h,w = getwindowyx(self.status)
-        msg = self.get_status() + " " + self.users_in_room()
+        msg = ""
+        if len(self.status_msg) > 0:
+            msg = self.get_status() + " "
+        u_list,frmt = self.users_in_room()
+        msg += u_list
         const_info = " " + datetime.datetime.now().strftime("%H:%M:%S")
-        if len(const_info) > w:
-            const_info = datetime.datetime.now().strftime("%H:%M:%S")
         eff_w = w - len(const_info) - 1
         if len(msg) > eff_w:
             idx = (idx +1)%len(msg)
@@ -308,15 +345,12 @@ class ChatDisplayManager(object):
                 if row >= h:
                     return
 
-    def display_div(window):
-        h,w = getwindowyx(window)
-        div = DIV_CHAR*(w/len(DIV_CHAR)) + DIV_CHAR[:w%len(DIV_CHAR)]
-        color_safe_(window,0,0,div)
-    
-    def display_chat_msg():
+    def display_chat_msg(self):
         window = self.chat
         msg = self.chat_msg
         h,w = getwindowyx(window)
+        div = DIV_CHAR*(w/len(DIV_CHAR)) + DIV_CHAR[:w%len(DIV_CHAR)]
+        self.addstr(window,0,0,div)
         row = 1
         entry = ""
         for entry in parse_entry_to_fit(msg,w)[-h:]:
@@ -336,10 +370,27 @@ class ChatDisplayManager(object):
         else:
             x = len(entry)
             y = row
-        curses.setsyx(y, x)
+        curses.setsyx(y,x)
 
+    def set_room_info(self,_json):
+        write_log(_json)
+        _json = json.loads(_json)
+        for user in _json["users"]:
+            self.USERS.append(tuple(user))
+        self.ROOM_NAME = _json["name"]
+        self.USERS.append(self.USER_NAME,tuple(_json["frmt"]))
+
+    def add_user(self,msg):
+        self.USERS.append((msg["name"],tuple(msg["frmt"])))
+        self.chat_log.append()
+        
     def users_in_room(self):
-        return "Connected to: " + ", ".join(i for i in self.USERS)
+        s = "Connected to: "
+        _frmt = []
+        for user,frmt in self.USERS:
+            _frmt.append((len(s),len(s)+len(user))+frmt)
+            s += user + ", "
+        return s,_frmt
 
     def get_colors(self,c):
         if c[0] < 0:
@@ -385,14 +436,11 @@ class ChatDisplayManager(object):
             self.status.leaveok(1)
 
             # Status Handler
-            self.status_thread = StatusThread(status,self.status_msg)
+            self.status_thread = StatusThread(self)
             self.status_thread.start()
 
-            self.sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-            self.sock.bind(("localhost",0))
-            
             # Message Send/Receive
-            self.message_thread = MessageThread(log,server_address,self.sock.getsockname())
+            self.message_thread = MessageThread(self,server_address)
             self.message_thread.start()
 
             while True:
@@ -423,15 +471,17 @@ class ChatDisplayManager(object):
         except KeyboardInterrupt:
             if curses:
                 curses.endwin()
-            if status_thread is not None:
-                status_thread.stop()
-            if message_thread is not None:
-                message_thread.stop()
+            if self.status_thread is not None:
+                self.status_thread.stop()
+            if self.message_thread is not None:
+                self.message_thread.stop()
+        except Exception as e:
+            write_log(e, traceback.format_exc())
         finally:
             if curses:
                 curses.endwin()
-            if message_thread is not None:
-                message_thread.stop()
-            if status_thread is not None:
-                status_thread.stop()
+            if self.message_thread is not None:
+                self.message_thread.stop()
+            if self.status_thread is not None:
+                self.status_thread.stop()
 

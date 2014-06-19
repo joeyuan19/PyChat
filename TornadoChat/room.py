@@ -1,10 +1,28 @@
 import socket
+import select
 import threading
+import json
+
+def _write_log(entry):
+    with open('pychat.log','a') as f:
+        f.write(str(entry)+"\n")
+
+def write_log(*args):
+    msg = ''
+    for arg in args:
+        msg += str(arg) + ' '
+    _write_log(msg)
+
+def write_err(e,err_title="PyChatError"):
+    write_log(err_title+": "+str(e)+"\n",traceback.format_exc())
+
+def serialize(_json):
+    return json.dumps(_json,separators=(":",","))
+
 
 class RoomManager(threading.Thread):
     CONNECT_LIMIT = 10
-    CONNECT_ATTEMPTS = 3
-    RECV_SIZE = 2048
+    RECV_SIZE = 4096
     COLORS = [
         (0,i) for i in range(1,8)
     ] + [
@@ -22,21 +40,19 @@ class RoomManager(threading.Thread):
     ] + [
         (7,i) for i in range(0,8) if i != 7 or i != 5
     ]
-    def __init__(self,*args,**kwargs):
-        print "create"
+    name = ""
+    def __init__(self,cache,*args,**kwargs):
+        self.cache = cache
         self._stop = threading.Event()
         self.host = 'localhost'
         # set up sever socket
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #self.server_socket.bind(('localhost',0))
+        self.server_socket.bind(('localhost',0))
         self.server_socket.listen(self.CONNECT_LIMIT)
         # Initiate Socket List
         self.sockets = [(self.server_socket,None)]
         self.msg_queue = []
         self.user_color = {}
-        self.mark_as_empty = None
-        self.room = Room.create()
-        self.room.save()
         super(RoomManager,self).__init__(*args,**kwargs)
         self.setDaemon(True)
         self.start()
@@ -62,15 +78,22 @@ class RoomManager(threading.Thread):
         return self._stop.isSet()
 
     def run(self):
-        self.room.set_thread(self)
         while not self.isstopped() and self.isactive():
             rsockets, wsockets, errsockets = select.select([sock for sock,user in self.sockets],[],[])
             for sock in rsockets:
                 if sock == self.server_socket:
                     new_conn, new_addr = sock.accept()
-                    user = new_conn.recv(64)
-                    if not user:
-                        self.connect_user(user, new_conn)
+                    user = new_conn.recv(128)
+                    _json = json.loads(user)
+                    if _json["sess"] in self.cache:
+                        c = self.connect_user(_user, new_conn)
+                        _json = {
+                            "users":[user.username for sock,user in self.sockets],
+                            "name":self.name,
+                            "frmt":c
+                        }
+                        write_log("<",_json,">")
+                        new_conn.send(serialize(_json))
                     else:
                         new_conn.close()
                 else:
@@ -86,10 +109,6 @@ class RoomManager(threading.Thread):
     def adjust_activity(self,sock):
         pass
 
-    def package_and_broadcast(self,msg="",u_name="",formatting=""):
-        msg = "<m><b>"+str(msg)+"</b><u>"+str(u_name)+"</u><d>"+full_date()+"</d><f>"+str(formatting)+"</f><c>1/1</c></m>"
-        self.broadcast(msg)
-    
     def broadcast(self,msg):
         for sock,user in self.sockets:
             if sock != self.server_sock:
@@ -98,22 +117,12 @@ class RoomManager(threading.Thread):
                 except:
                     self.disconnect_user(sock=sock)
 
-    def connect_user(self,u_name,sock):
-        user = Users.objects.get(name=u_name)
-        if user.count() == 0:
-            sock.close()
-        else:
-            user = user[0]
-            if user.isactive():
-                self.sockets.append((sock,user))
-                self.user_color[self.get_new_color()] = user
-                self.package_and_broadcast(msg=user.name+" has entered the room...")
-            else:
-                sock.close()
+    def connect_user(self,user,sock):
+        self.sockets.append((sock,user))
+        c = self.get_new_color()
+        self.user_color[c] = user
+        return c
         
-    def get_users(self):
-        return ', '.join(user.name for sock,user in self.sockets if sock != self.server_socket)
-
     def disconnect_user(self,user=None,sock=None,index=None):
         if index is not None:
             try:

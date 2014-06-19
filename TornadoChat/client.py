@@ -13,6 +13,12 @@ import sys
 class InvalidLoginError(Exception):
     pass
 
+class RoomCreationError(Exception):
+    pass
+
+class LobbyError(Exception):
+    pass
+
 class ChatClient(object):
     def __init__(self,server="127.0.0.1:8000"):
         self.http_client = HTTPClient()
@@ -63,7 +69,7 @@ class ChatClient(object):
         )
         print "logging in...",
         response = self.fetch(req)
-        print ""
+        print
         try:
             if response.error:
                 print "LoginError:",response.code,response.error
@@ -79,7 +85,7 @@ class ChatClient(object):
             print traceback.format_exc()
             self._loggedin = False
         return self._loggedin
-
+    
     def logout(self):
         req = self.request('logout',
             headers={
@@ -96,13 +102,13 @@ class ChatClient(object):
                 "CHAT_SESSION_TOKEN":self.session_token
             }
         )
-        self.get_lobby_cb(self.fetch(req))
+        return self.get_lobby_cb(self.fetch(req))
 
     def get_lobby_cb(self,response):
         if response.error:
-            print "Error fetching lobby: <"+str(response.code)+">",response.reason
+            raise LobbyError("Failed to fetch Lobby <"+str(response.code)+" "+str(response.error)+" >")
         else:
-            print response.body
+            return response
             
     def join_room(self):
         req = self.request('join',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
@@ -112,9 +118,20 @@ class ChatClient(object):
         req = self.request('leave',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
         return self.fetch(req,handle_request)
     
+    def create(self):
+        res = self.create_room()
+        if res.error:
+            raise RoomCreationError(" Server returned <"+str(res.code)+" "+res.error+">")
+        else:
+            manager = ChatDisplayManager(self.session_token)
+            _json = json.loads(res.body)
+            manager.run_chat_room((_json["addr"]["host"],int(_json["addr"]["port"])))
+    
     def create_room(self):
-        req = self.request('create',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
-        return self.fetch(req,handle_request)
+        req = self.request('create',headers={
+            "CHAT_UNAME":self.username,
+            "CHAT_SESSION_TOKEN":self.session_token})
+        return self.fetch(req)
 
 def pad(s,n,ch=" ",left=True):
     if left:
@@ -138,7 +155,7 @@ try:
             if client.login():
                 break
         except:
-            pass
+            print
         try_count += 1
         if try_count == 3:
             print "Three failed login attempts."

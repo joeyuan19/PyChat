@@ -14,7 +14,7 @@ class ChatUser(object):
         return cls(user[0],user[1],logged_in,session_token)
 
     @classmethod
-    def get_all(cls):
+    def getall(cls):
         return [cls(user[0],user[1]) for user in get_all_users()]
     
     @classmethod
@@ -120,7 +120,7 @@ def _get_all_users(cur):
     _sql = """
     SELECT * FROM users
     """
-    cur.excute(_sql)
+    cur.execute(_sql)
     return cur.fetchall()
 
 def check_for_user(username):

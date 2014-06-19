@@ -9,17 +9,32 @@ import traceback
 from db import ChatUser
 from room import RoomManager
 
+class Cache(dict):
+    def get_user(self,username):
+        if username in self:
+            return self[username]
+        return ChatUser.get_user(username)
 
-SESSION_CACHE = {}
+
+SESSION_CACHE = Cache()
 
 def get_user(username):
     if username in SESSION_CACHE:
         return SESSION_CACHE[username]
     return ChatUser.get_user(username)
 
-def authenticate(username,password):
+def login(username,password):
     user = get_user(username)
     return user is not None and user.login(password)
+
+def authenticate(request):
+    try:
+        username = request.headers["CHAT_UNAME"]
+        token = request.headers["CHAT_SESSION_TOKEN"]
+        user = get_user(username)
+        return user is not None and token == user.session_token
+    except:
+        return False
 
 def random_char():
     return chr(random.choice(range(33,95)+range(96,127)))
@@ -40,12 +55,12 @@ class LoginHandler(tornado.web.RequestHandler):
     def get(self):
         try:
             req = self.request
-            print req
-            if authenticate(req.headers["CHAT_UNAME"],req.headers["CHAT_PWORD"]):
+            if login(req.headers["CHAT_UNAME"],req.headers["CHAT_PWORD"]):
                 user = get_user(req.headers["CHAT_UNAME"])
                 token = user.session_token
                 if len(token) == 0:
                     token = get_new_token()
+                    user.session_token = token
                 _json = {
                     "session_token":token
                 }
@@ -64,9 +79,7 @@ class LogoutHandler(tornado.web.RequestHandler):
 
 class LobbyHandler(tornado.web.RequestHandler):
     def get(self):
-        req = self.request
-        user = get_user(req.headers["CHAT_UNAME"])
-        if user is not None and req.headers["CHAT_SESSION_TOKEN"] == user.session_token:
+        if authenticate(self.request):
             _json = {
                 "rooms":[],
                 "users":[]
@@ -90,7 +103,17 @@ class LeaveHandler(tornado.web.RequestHandler):
 
 class CreateHandler(tornado.web.RequestHandler):
     def get(self):
-        self.write("Create")
+        if authenticate(self.request):
+            room = RoomManager(SESSION_CACHE)
+            while not room.is_alive():
+                pass
+            _addr = room.addr()
+            _json = {"addr":{"host":_addr[0],"port":_addr[1]}}
+            self.write(serialize(_json))
+        else:
+            self.set_status(403,"Invalid session, please login")
+            
+        
 
 
 app = tornado.web.Application([
