@@ -112,9 +112,7 @@ class MessageThread(threading.Thread):
         self.server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         self.server_socket.connect(server_addr)
         self.server_socket.send(USER_NAME)
-        self.client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        self.client_socket.connect(client_addr)
-        self.sockets = [self.server_socket, self.client_socket]
+        self.sockets = [self.server_socket]
     
     def run(self):
         while not self.isstopped():
@@ -128,14 +126,9 @@ class MessageThread(threading.Thread):
                         write_log("ServerReadError:",e)
                         self.stop()
                         break
-                else:
-                    try:
-                        msg = sock.recv(self.RECV_SIZE)
-                        self.package_and_send(msg)
-                    except Exception as e:
-                        write_log("ClientReadError:",e)
-                        self.stop()
-                        break
+            _next = self.get_next_msg()
+            if _next is not None:
+                self.server_socket.send(_next)
         self.disconnect()
     
     def _process_partial_message(self,msg):
@@ -157,8 +150,6 @@ class MessageThread(threading.Thread):
     def process(self,msg):
         pass
 
-    def package_and_send(self,msg):
-        pass 
 
 def split_window(window,ratio=0.75):
     height,width = getwindowyx(window)
@@ -294,7 +285,9 @@ class ChatDisplayManager(object):
         div = DIV_CHAR*(w/len(DIV_CHAR)) + DIV_CHAR[:w%len(DIV_CHAR)]
         color_safe_(window,0,0,div)
     
-    def display_chat_msg(msg):
+    def display_chat_msg():
+        window = self.chat
+        msg = self.chat_msg
         h,w = getwindowyx(window)
         row = 1
         entry = ""
@@ -350,7 +343,9 @@ class ChatDisplayManager(object):
             action = "type"
         return action,ch
 
-    def get_send_socket(self):
+    def send(self):
+        self.message_thread.send(self.chat_msg.strip())
+        self.chat_msg = ""
 
     def run_chat_room(self,addr):
         try:
@@ -386,12 +381,11 @@ class ChatDisplayManager(object):
                 self.chat.refresh()
                 action,c = self.get_user_action()
                 if action == "send":
-                    self.chat_log.append((self.USER,"derp o'clock",chat_msg.strip()))
-                    chat_msg = ""
+                    self.send()
                 elif action == "delr":
-                    chat_msg = chat_msg[:-1]
+                    self.chat_msg = chat_msg[:-1]
                 elif action == "type":
-                    chat_msg += str(chr(c))
+                    self.chat_msg += str(chr(c))
             curses.endwin()
             self.status_thread.stop()
             self.message_thread.stop()
