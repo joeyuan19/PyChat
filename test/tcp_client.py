@@ -46,7 +46,6 @@ if __name__ == "__main__":
                     #print data
                     sys.stdout.write(data)
                     prompt()
-
             #user entered a message
             else :
                 msg = sys.stdin.readline()

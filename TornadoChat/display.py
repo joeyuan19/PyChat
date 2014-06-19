@@ -51,12 +51,6 @@ def getwindowyx(window=None):
     else:
         return get_window_dims(window)
 
-# Functions to handle printing to the screen
-
-
-
-
-
 def get_mode_str(mde):
     if mde == MODE_INSERT:
         return "[Entry Field]"
@@ -74,17 +68,30 @@ def fill_middle(msg,trailer,width):
         return msg + " "*(width - len(msg + trailer)-1) + trailer
     return msg + trailer
 
+def join_messages(msgs):
+    _msg = {
+        "body":"",
+        "name":"",
+        "time":"",
+        "frmt":[]
+    }
+    for msg in msgs:
+        _msg["body"] += msg["body"]
+        _msg["frmt"] += msg["frmt"]
+    _msg["name"] = msg["name"]
+    _msg["time"] = msg["frmt"]
+    return _msg
+
+def serialize(_json):
+    return json.dumps(_json,separator=(",",":"))
 
 
 class StatusThread(threading.Thread):
     def __init__(self,manager,window,status_msg,*args,**kwargs):
         super(StatusThread,self).__init__(*args,**kwargs)
         self.last_index = 0
-        self.window = window
         self.manager = manager
         self._stop = threading.Event()
-        self.status_msg = status_msg
-        self.mode = MODE_INSERT
 
     def run(self):
         while not self.isstopped():
@@ -92,7 +99,7 @@ class StatusThread(threading.Thread):
             time.sleep(0.9)
             
     def display(self):
-        self.last_index = manager.display_status_msg(self.window,(manager.status_msg,self.last_index,self.mode))
+        self.last_index = manager.display_status_msg(self.last_index)
     
     def stop(self):
         self._stop.set()
@@ -101,23 +108,29 @@ class StatusThread(threading.Thread):
         return self._stop.isSet()
 
 class MessageThread(threading.Thread):
-    RECV_SIZE = 2048
-    def __init__(self,manager,window,server_addr,client_addr=('localhost',0),message_history=[],*args,**kwargs):
+    RECV_SIZE = 4096
+    def __init__(self,manager,window,server_addr,client_addr,*args,**kwargs):
         super(MessageThread, self).__init__(*args,**kwargs)
         self.window = window
         self.manager = manager
         self._stop = threading.Event()
-        self.message_history = message_history
         self.partial_messages = []
         self.server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         self.server_socket.connect(server_addr)
-        self.server_socket.send(USER_NAME)
+        _json = {
+            "verb":"join",
+            "name":manager.USER_NAME,
+            "sess":manager.SESSION_TOKEN
+        }
+        join_request = serialize(_json) 
+        self.server_socket.send(join_request)
         self.client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         self.client_socket.connect(client_addr)
         self.sockets = [self.server_socket, self.client_socket]
     
     def run(self):
         while not self.isstopped():
+            self.display()
             r_sock,w_sock,e_sock = select.select(self.sockets,[],[])
             for sock in r_sock:
                 if sock == self.server_socket:
@@ -131,7 +144,7 @@ class MessageThread(threading.Thread):
                 else:
                     try:
                         msg = sock.recv(self.RECV_SIZE)
-                        self.package_and_send(msg)
+                        self.server_socket.send(msg)
                     except Exception as e:
                         write_log("ClientReadError:",e)
                         self.stop()
@@ -139,10 +152,17 @@ class MessageThread(threading.Thread):
         self.disconnect()
     
     def _process_partial_message(self,msg):
-        pass
+        for partial_message in self.partial_messages:
+            if msg["mgid"] == partial_message[0]["mgid"]:
+                partial_message.append(msg["mgid"])
+                if len(partial_message) == msg["totl"]:
+                    manager.add_msg(join_messages(partial_message))
+                    self.partial_messages.remove(partial_message)
+                return
+        self.partial_messages.append([msg])
 
     def display(self):
-        manager.display_chat_log(self.window,self.message_history)
+        manager.display_chat_log()
 
     def disconnect(self):
         self.server_socket.close()
@@ -155,10 +175,12 @@ class MessageThread(threading.Thread):
         return self._stop.isSet()
 
     def process(self,msg):
-        pass
-
-    def package_and_send(self,msg):
-        pass 
+        if msg["verb"] == "msg":
+            if msg["totl"] > 1:
+                self._process_partial_message(msg)
+            manager.add_msg(msg)
+        elif msg["verb"] == "join":
+            manager.add_user("verb")
 
 def split_window(window,ratio=0.75):
     height,width = getwindowyx(window)
@@ -250,12 +272,12 @@ class ChatDisplayManager(object):
         else:
             window.addstr(y,x,s)
             
-    def display_status_msg(self,msg_info):
+    def display_status_msg(self,idx):
         h,w = getwindowyx(self.status)
-        msg = msg_info[0] + " " + self.users_in_room()
-        idx = msg_info[1]
-        mde = get_mode_str(msg_info[2])
-        const_info = " " + mde + " " + datetime.datetime.now().strftime("%H:%M:%S")
+        msg = self.get_status() + " " + self.users_in_room()
+        const_info = " " + datetime.datetime.now().strftime("%H:%M:%S")
+        if len(const_info) > w:
+            const_info = datetime.datetime.now().strftime("%H:%M:%S")
         eff_w = w - len(const_info) - 1
         if len(msg) > eff_w:
             idx = (idx +1)%len(msg)
@@ -273,6 +295,7 @@ class ChatDisplayManager(object):
         row = 0
         for entry in log[-h:]:
             # print the header and first line
+            if True:
                 self.addstr(window,row,0,user_name)
             else:
                 self.addstr(window,row,0,user_name)
@@ -289,12 +312,15 @@ class ChatDisplayManager(object):
                 row += 1
                 if row >= h:
                     return
+
     def display_div(window):
         h,w = getwindowyx(window)
         div = DIV_CHAR*(w/len(DIV_CHAR)) + DIV_CHAR[:w%len(DIV_CHAR)]
         color_safe_(window,0,0,div)
     
-    def display_chat_msg(msg):
+    def display_chat_msg():
+        msg = self.chat_msg
+        window = self.chat
         h,w = getwindowyx(window)
         row = 1
         entry = ""
@@ -316,7 +342,6 @@ class ChatDisplayManager(object):
             x = len(entry)
             y = row
         curses.setsyx(y, x)
-
 
     def users_in_room(self):
         return "Connected to: " + ", ".join(i for i in self.USERS)
@@ -350,14 +375,13 @@ class ChatDisplayManager(object):
             action = "type"
         return action,ch
 
-    def get_send_socket(self):
-
-    def run_chat_room(self,addr):
+    def run_chat_room(self,server_address):
         try:
-            signal.signal(signal.SIGWINCH,self.resize_handler)
             self.curses_init()
             self.log, self.chat, self.status = split_window(self.window)
 
+            signal.signal(signal.SIGWINCH,self.resize_handler)
+            
             self.log.leaveok(1)
             self.status.leaveok(1)
 
@@ -365,8 +389,11 @@ class ChatDisplayManager(object):
             self.status_thread = StatusThread(status,self.status_msg)
             self.status_thread.start()
 
+            self.sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+            self.sock.bind(("localhost",0))
+            
             # Message Send/Receive
-            self.message_thread = MessageThread(log,addr)
+            self.message_thread = MessageThread(log,server_address,self.sock.getsockname())
             self.message_thread.start()
 
             while True:
@@ -386,7 +413,6 @@ class ChatDisplayManager(object):
                 self.chat.refresh()
                 action,c = self.get_user_action()
                 if action == "send":
-                    self.chat_log.append((self.USER,"derp o'clock",chat_msg.strip()))
                     chat_msg = ""
                 elif action == "delr":
                     chat_msg = chat_msg[:-1]
