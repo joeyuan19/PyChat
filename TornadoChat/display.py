@@ -373,7 +373,7 @@ class ChatDisplayManager(object):
         curses.setsyx(y,x)
 
     def set_room_info(self,_json):
-        write_log(_json)
+        write_log("<"+_json+">")
         _json = json.loads(_json)
         for user in _json["users"]:
             self.USERS.append(tuple(user))

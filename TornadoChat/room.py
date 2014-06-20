@@ -4,7 +4,7 @@ import threading
 import json
 
 def _write_log(entry):
-    with open('pychat.log','a') as f:
+    with open('room.log','a') as f:
         f.write(str(entry)+"\n")
 
 def write_log(*args):
@@ -17,7 +17,7 @@ def write_err(e,err_title="PyChatError"):
     write_log(err_title+": "+str(e)+"\n",traceback.format_exc())
 
 def serialize(_json):
-    return json.dumps(_json,separators=(":",","))
+    return json.dumps(_json,separators=(",",":"))
 
 
 class RoomManager(threading.Thread):
@@ -42,6 +42,7 @@ class RoomManager(threading.Thread):
     ]
     name = ""
     def __init__(self,cache,*args,**kwargs):
+        write_log("room begin init")
         self.cache = cache
         self._stop = threading.Event()
         self.host = 'localhost'
@@ -56,6 +57,7 @@ class RoomManager(threading.Thread):
         super(RoomManager,self).__init__(*args,**kwargs)
         self.setDaemon(True)
         self.start()
+        write_log("room init")
 
     def activity(self):
         self.last_active = timezone.now()
@@ -84,6 +86,7 @@ class RoomManager(threading.Thread):
                 if sock == self.server_socket:
                     new_conn, new_addr = sock.accept()
                     user = new_conn.recv(128)
+                    write_log("server recv user info","<",user,">")
                     _json = json.loads(user)
                     if _json["sess"] in self.cache:
                         c = self.connect_user(_user, new_conn)
