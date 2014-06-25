@@ -1,5 +1,6 @@
 import socket
 import select
+import random
 import threading
 import json
 
@@ -88,16 +89,17 @@ class RoomManager(threading.Thread):
                     user = new_conn.recv(128)
                     write_log("server recv user info","<",user,">")
                     _json = json.loads(user)
-                    if _json["sess"] in self.cache:
-                        c = self.connect_user(_user, new_conn)
+                    if _json["name"] in self.cache and self.cache[_json["name"]].session_token == _json["sess"]:
+                        c = self.connect_user(self.cache[_json["name"]], new_conn)
                         _json = {
-                            "users":[user.username for sock,user in self.sockets],
+                            "users":[user.username for sock,user in self.sockets if user is not None],
                             "name":self.name,
                             "frmt":c
                         }
                         write_log("<",_json,">")
                         new_conn.send(serialize(_json))
                     else:
+                        print "refused connection"
                         new_conn.close()
                 else:
                     try:

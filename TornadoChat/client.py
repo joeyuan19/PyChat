@@ -123,7 +123,7 @@ class ChatClient(object):
         if res.error:
             raise RoomCreationError(" Server returned <"+str(res.code)+" "+res.error+">")
         else:
-            manager = ChatDisplayManager(self.session_token)
+            manager = ChatDisplayManager(self.session_token,self.username)
             _json = json.loads(res.body)
             manager.run_chat_room((_json["addr"]["host"],int(_json["addr"]["port"])))
     

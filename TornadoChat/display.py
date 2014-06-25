@@ -105,7 +105,6 @@ def join_messages(msgs):
 def serialize(_json):
     return json.dumps(_json,separators=(",",":"))
 
-
 class StatusThread(threading.Thread):
     def __init__(self,manager,*args,**kwargs):
         super(StatusThread,self).__init__(*args,**kwargs)
@@ -186,7 +185,7 @@ class MessageThread(threading.Thread):
                     self.partial_messages.remove(partial_message)
                 return
         self.partial_messages.append([msg])
-
+    
     def display(self):
         manager.display_chat_log()
 
@@ -265,8 +264,9 @@ class ChatDisplayManager(object):
     chat_msg = ""
     chat_log = []
     
-    def __init__(self,session_token):
+    def __init__(self,session_token,username):
         self.SESSION_TOKEN = session_token
+        self.USER_NAME = username
 
     def curses_init(self):
         self.window = curses.initscr()
