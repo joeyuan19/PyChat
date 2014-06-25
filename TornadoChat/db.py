@@ -247,6 +247,13 @@ if __name__ == "__main__":
             elif command.startswith("has_user"):
                 username = command[command.find(" ")+1:]
                 print check_for_user(username)
+            elif command.startswith("switch_db"):
+                db_name = command[command.find(" ")+1:]
+                print "Closing previous DB connection..."
+                print "Connection closed"
+                print "Connecting to:",db_name
+                DB_NAME = db_name.strip()
+                print ""
             elif command == "help":
                 print "Help Info"
                 print "Enter an SQL command to modify or change the Chat DB"
@@ -276,5 +283,6 @@ if __name__ == "__main__":
         except Exception as e:
             print "Error:",e
             print traceback.format_exc()
+            command = ""
         finally:
             command = ""
