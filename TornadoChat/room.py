@@ -2,6 +2,7 @@ import socket
 import select
 import random
 import threading
+import traceback
 import json
 
 def _write_log(entry):
@@ -14,8 +15,8 @@ def write_log(*args):
         msg += str(arg) + ' '
     _write_log(msg)
 
-def write_err(e,err_title="PyChatError"):
-    write_log(err_title+": "+str(e)+"\n",traceback.format_exc())
+def write_err(err_name="PyChatError"):
+    write_log(str(err_name)+":\n",traceback.format_exc())
 
 def serialize(_json):
     return json.dumps(_json,separators=(",",":"))
@@ -43,7 +44,6 @@ class RoomManager(threading.Thread):
     ]
     name = ""
     def __init__(self,cache,*args,**kwargs):
-        write_log("room begin init")
         self.cache = cache
         self._stop = threading.Event()
         self.host = 'localhost'
@@ -58,7 +58,6 @@ class RoomManager(threading.Thread):
         super(RoomManager,self).__init__(*args,**kwargs)
         self.setDaemon(True)
         self.start()
-        write_log("room init")
 
     def activity(self):
         self.last_active = timezone.now()
@@ -87,16 +86,14 @@ class RoomManager(threading.Thread):
                 if sock == self.server_socket:
                     new_conn, new_addr = sock.accept()
                     user = new_conn.recv(128)
-                    write_log("server recv user info","<",user,">")
                     _json = json.loads(user)
                     if _json["name"] in self.cache and self.cache[_json["name"]].session_token == _json["sess"]:
                         c = self.connect_user(self.cache[_json["name"]], new_conn)
                         _json = {
-                            "users":[user.username for sock,user in self.sockets if user is not None],
+                            "users":[(user.username,frmt) for frmt,user in self.user_color.iteritems()],
                             "name":self.name,
                             "frmt":c
                         }
-                        write_log("<",_json,">")
                         new_conn.send(serialize(_json))
                     else:
                         print "refused connection"
@@ -107,7 +104,7 @@ class RoomManager(threading.Thread):
                         self.adjust_activity(sock)
                         self.broadcast(msg)
                     except Exception as e:
-                        write_err("ReceiveError:",e)
+                        write_err("ReceiveError")
                         self.disconnect_user(sock=sock)
         self.disconnect()
     
@@ -116,7 +113,7 @@ class RoomManager(threading.Thread):
 
     def broadcast(self,msg):
         for sock,user in self.sockets:
-            if sock != self.server_sock:
+            if sock != self.server_socket:
                 try:
                     sock.send(msg)
                 except:
@@ -136,14 +133,14 @@ class RoomManager(threading.Thread):
                 self.sockets.pop(index)
                 return
             except Exception as e:
-                write_err("Disconnect Exception:",e)
+                write_err("Disconnect Exception:")
                 return
         if user is None and sock is None:
             return
         for i,pair in enumerate(self.sockets):
             sock,user = pair
-            if user == sock[1] or sock == sock[0]:
-                disconnect_user(index=i)
+            if user == user or sock == sock:
+                self.disconnect_user(index=i)
                 break
 
     def disconnect(self):

@@ -3,6 +3,7 @@ import json
 import curses
 import socket
 import signal
+import select
 import datetime
 import threading
 import traceback
@@ -111,15 +112,28 @@ class StatusThread(threading.Thread):
         self.last_index = 0
         self.manager = manager
         self._stop = threading.Event()
+        self.setDaemon(True)
 
     def run(self):
         while not self.isstopped():
-            self.display()
+            self.update_display()
             time.sleep(0.9)
             
-    def display(self):
-        self.last_index = self.manager.display_status_msg(self.last_index)
-    
+    def update_display(self):
+        h,w = getwindowyx(self.manager.status)
+        msg = ""
+        u_list,frmt = self.manager.users_in_room()
+        msg += u_list
+        const_info = " " + datetime.datetime.now().strftime("%H:%M:%S")
+        eff_w = w - len(const_info) - 1
+        if len(msg) > eff_w:
+            idx = (idx +1)%len(msg)
+            msg = (msg + "      " + msg + "      ")[idx:idx+eff_w-3] + "..."
+        else:
+            idx = -1
+        self.manager.status_msg = fill_middle(msg,const_info,w)
+        self.last_index = idx
+
     def stop(self):
         self._stop.set()
 
@@ -132,6 +146,7 @@ class MessageThread(threading.Thread):
         super(MessageThread, self).__init__(*args,**kwargs)
         self.manager = manager
         self._stop = threading.Event()
+        self.msg_queue = []
         self.partial_messages = []
         self.server_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         self.server_socket.connect(server_addr)
@@ -144,14 +159,11 @@ class MessageThread(threading.Thread):
         self.server_socket.send(join_request)
         room_info = self.server_socket.recv(self.RECV_SIZE)
         manager.set_room_info(room_info)
-        self.client_socket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-        self.client_socket.connect(client_addr)
-        self.sockets = [self.server_socket]
+        self.setDaemon(True)
     
     def run(self):
         while not self.isstopped():
-            self.display()
-            r_sock,w_sock,e_sock = select.select(self.sockets,[],[])
+            r_sock,w_sock,e_sock = select.select([self.server_socket],[self.server_socket],[])
             for sock in r_sock:
                 if sock == self.server_socket:
                     try:
@@ -164,17 +176,20 @@ class MessageThread(threading.Thread):
             for sock in w_sock:
                 _next = self.get_next_msg()
                 if _next is not None:
-                    self.sock.send(_next)
+                    write_log("msg thred:sending",_next)
+                    self.server_socket.send(_next)
+        write_log("error")
         self.disconnect()
     
     def send(self,msg):
+        write_log("MessageThread adding to send queue:",msg)
         self.msg_queue.append(msg)
+        write_log("MessageThread queue:",self.msg_queue)
 
     def get_next_msg(self):
         if len(self.msg_queue) > 0:
             return self.msg_queue.pop(0)
         return None
-
     
     def _process_partial_message(self,msg):
         for partial_message in self.partial_messages:
@@ -191,7 +206,6 @@ class MessageThread(threading.Thread):
 
     def disconnect(self):
         self.server_socket.close()
-        self.client_socket.close()
 
     def stop(self):
         self._stop.set()
@@ -275,7 +289,11 @@ class ChatDisplayManager(object):
         curses.noecho()
         curses.cbreak()
         self.init_colors()
-    
+        self.log, self.chat, self.status = split_window(self.window)
+        signal.signal(signal.SIGWINCH,self.resize_handler)
+        self.log.leaveok(1)
+        self.status.leaveok(1)
+
     def init_colors(self):
         self.HAS_COLORS = curses.has_colors()
         self.CAN_CHANGE_COLOR = curses.can_change_color()
@@ -300,25 +318,15 @@ class ChatDisplayManager(object):
             curses.init_pair(1,self.COLOR_INDEX[c[0]],self.COLOR_INDEX[c[1]])
             window.addstr(y,x,s,curses.color_pair(1))
         else:
-            window.addstr(y,x,s)
+            try:
+                window.addstr(y,x,s)
+            except:
+                write_log("write: ",s,"to",x,y)
+                write_log(traceback.format_exc())
             
-    def display_status_msg(self,idx):
-        h,w = getwindowyx(self.status)
-        msg = ""
-        if len(self.status_msg) > 0:
-            msg = self.get_status() + " "
-        u_list,frmt = self.users_in_room()
-        msg += u_list
-        const_info = " " + datetime.datetime.now().strftime("%H:%M:%S")
-        eff_w = w - len(const_info) - 1
-        if len(msg) > eff_w:
-            idx = (idx +1)%len(msg)
-            msg = (msg + "      " + msg + "      ")[idx:idx+eff_w-3] + "..."
-        else:
-            idx = -1
-        msg = fill_middle(msg,const_info,w)
-        self.addstr(self.status,0,0,msg)
-        return idx
+            
+    def display_status(self):
+        self.addstr(self.status,0,0,self.status_msg)
     
     def display_chat_log(self):
         window = self.log
@@ -326,7 +334,6 @@ class ChatDisplayManager(object):
         h,w = getwindowyx(window)
         row = 0
         for entry in log[-h:]:
-            # print the header and first line
             if True:
                 self.addstr(window,row,0,user_name)
             else:
@@ -345,16 +352,16 @@ class ChatDisplayManager(object):
                 if row >= h:
                     return
 
-    def display_chat_msg(self):
+    def display_chat(self):
         window = self.chat
         msg = self.chat_msg
         h,w = getwindowyx(window)
-        div = DIV_CHAR*(w/len(DIV_CHAR)) + DIV_CHAR[:w%len(DIV_CHAR)]
+        div = self.DIV_CHAR*(w/len(self.DIV_CHAR)) + self.DIV_CHAR[:w%len(self.DIV_CHAR)]
         self.addstr(window,0,0,div)
         row = 1
         entry = ""
         for entry in parse_entry_to_fit(msg,w)[-h:]:
-            color_safe_(window,row,0,entry)
+            self.addstr(window,row,0,entry)
             row += 1
             if row >= h-1:
                 break
@@ -373,24 +380,24 @@ class ChatDisplayManager(object):
         curses.setsyx(y,x)
 
     def set_room_info(self,_json):
-        write_log("<"+_json+">")
         _json = json.loads(_json)
         for user in _json["users"]:
             self.USERS.append(tuple(user))
         self.ROOM_NAME = _json["name"]
-        self.USERS.append(self.USER_NAME,tuple(_json["frmt"]))
 
     def add_user(self,msg):
         self.USERS.append((msg["name"],tuple(msg["frmt"])))
         self.chat_log.append()
         
     def users_in_room(self):
+        if len(self.USERS) == 0:
+            return "Connecting...",[]
         s = "Connected to: "
         _frmt = []
         for user,frmt in self.USERS:
-            _frmt.append((len(s),len(s)+len(user))+frmt)
+            #_frmt.append((len(s),len(s)+len(user))+frmt)
             s += user + ", "
-        return s,_frmt
+        return s[:-2],_frmt
 
     def get_colors(self,c):
         if c[0] < 0:
@@ -406,8 +413,7 @@ class ChatDisplayManager(object):
     
     def resize_handler(self,n,frame):
         curses.endwin()
-        self.window = curses.initscr()
-        self.log, self.chat, self.status = split_window(self.window)
+        self.curses_init()
         
     def get_user_action(self):
         ch = self.window.getch()
@@ -422,19 +428,14 @@ class ChatDisplayManager(object):
         return action,ch
 
     def send(self):
+        write_log("manager sent:",self.chat_msg)
         self.message_thread.send(self.chat_msg.strip())
         self.chat_msg = ""
 
     def run_chat_room(self,server_address):
         try:
             self.curses_init()
-            self.log, self.chat, self.status = split_window(self.window)
-
-            signal.signal(signal.SIGWINCH,self.resize_handler)
             
-            self.log.leaveok(1)
-            self.status.leaveok(1)
-
             # Status Handler
             self.status_thread = StatusThread(self)
             self.status_thread.start()
@@ -455,14 +456,13 @@ class ChatDisplayManager(object):
 
                 # Message Prep Display
                 self.chat.erase()
-                display_div(chat)
-                display_chat_msg()
+                self.display_chat()
                 self.chat.refresh()
                 action,c = self.get_user_action()
                 if action == "send":
                     self.send()
                 elif action == "delr":
-                    self.chat_msg = chat_msg[:-1]
+                    self.chat_msg = self.chat_msg[:-1]
                 elif action == "type":
                     self.chat_msg += str(chr(c))
             curses.endwin()
