@@ -31,6 +31,12 @@ def write_log(*args):
 def write_err(e,err_title="PyChatError"):
     write_log(err_title+": "+str(e)+"\n",traceback.format_exc())
 
+def time_now():
+    return datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
+
+def time_to_display(s):
+    return datetime.datetime.now().strptime(s,"%Y%m%d%H%M%S%f").strftime("%H:%M:%S")
+
 # Text Parsers
 
 def parse_entry_to_fit(entry,width):
@@ -170,7 +176,7 @@ class MessageThread(threading.Thread):
                         msg = sock.recv(self.RECV_SIZE)
                         self.process(msg)
                     except Exception as e:
-                        write_log("ServerReadError:",e)
+                        write_log("ServerReadError:",traceback.format_exc())
                         self.stop()
                         break
             for sock in w_sock:
@@ -182,10 +188,29 @@ class MessageThread(threading.Thread):
         self.disconnect()
     
     def send(self,msg):
-        write_log("MessageThread adding to send queue:",msg)
-        self.msg_queue.append(msg)
-        write_log("MessageThread queue:",self.msg_queue)
-
+        total = 0
+        time_stamp = time_now()
+        msgs = []
+        while len(msg) > 0:
+            total += 1
+            _msg = {
+                "verb":"msg",
+                "msg":"",
+                "frmt":[],
+                "index":99,
+                "totl":99,
+                "time":time_stamp,
+                "name":self.manager.USER_NAME
+            }
+            _json = serialize(_msg)
+            n = self.RECV_SIZE-len(_json)
+            _msg["msg"],msg = msg[:n],msg[n:]
+            _msg["idx"] = total
+            msgs.append(_msg)
+        for _msg in msgs:
+            _msg["totl"] = total
+            self.msg_queue.append(serialize(_msg))
+            
     def get_next_msg(self):
         if len(self.msg_queue) > 0:
             return self.msg_queue.pop(0)
@@ -193,16 +218,16 @@ class MessageThread(threading.Thread):
     
     def _process_partial_message(self,msg):
         for partial_message in self.partial_messages:
-            if msg["mgid"] == partial_message[0]["mgid"]:
+            if msg["name"] == partial_message["name"] and msg["time"] == partial_message[0]["time"]:
                 partial_message.append(msg["mgid"])
                 if len(partial_message) == msg["totl"]:
-                    manager.add_msg(join_messages(partial_message))
+                    self.manager.add_msg(join_messages(partial_message))
                     self.partial_messages.remove(partial_message)
                 return
         self.partial_messages.append([msg])
     
     def display(self):
-        manager.display_chat_log()
+        self.manager.display_chat_log()
 
     def disconnect(self):
         self.server_socket.close()
@@ -214,12 +239,14 @@ class MessageThread(threading.Thread):
         return self._stop.isSet()
 
     def process(self,msg):
+        msg = json.loads(msg)
         if msg["verb"] == "msg":
             if msg["totl"] > 1:
                 self._process_partial_message(msg)
-            manager.add_msg(msg)
+            else:
+                self.manager.add_msg(msg)
         elif msg["verb"] == "join":
-            manager.add_user(msg)
+            self.manager.add_user(msg)
 
 def split_window(window,ratio=0.75):
     height,width = getwindowyx(window)
@@ -333,20 +360,10 @@ class ChatDisplayManager(object):
         log = self.chat_log
         h,w = getwindowyx(window)
         row = 0
-        for entry in log[-h:]:
-            if True:
-                self.addstr(window,row,0,user_name)
-            else:
-                self.addstr(window,row,0,user_name)
-            header = " (" + entry[1] + ")" + ": "
-            index = entry[2][:w-len(header)].rfind(" ")
-            if index < 0 or len(entry[2][:w-len(header)]) < w:
-                index = w - len(header)
-            self.addstr(window,row,len(user_name),header + entry[2][:index])
-            row += 1
+        for entry,frmt in log[-h:]:
             if row >= h:
                 return
-            for line in parse_entry_to_fit(entry[2][index:].strip(),w):
+            for line in parse_entry_to_fit(entry,w):
                 self.addstr(window,row,0,line)
                 row += 1
                 if row >= h:
@@ -386,9 +403,14 @@ class ChatDisplayManager(object):
         self.ROOM_NAME = _json["name"]
 
     def add_user(self,msg):
-        self.USERS.append((msg["name"],tuple(msg["frmt"])))
-        self.chat_log.append()
-        
+        frmt = tuple(msg["frmt"])
+        self.USERS.append((msg["name"],frmt))
+        self.chat_log.append((msg["name"]+" has joined the room",(0,len(msg["name"]),)+frmt))
+    
+    def add_msg(self,msg):
+        _msg = msg["name"]+" ("+time_to_display(msg["time"])+"): "+msg["msg"]
+        self.chat_log.append((_msg.strip(),msg["frmt"]))
+    
     def users_in_room(self):
         if len(self.USERS) == 0:
             return "Connecting...",[]

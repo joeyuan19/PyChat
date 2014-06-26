@@ -10,11 +10,24 @@ from db import ChatUser
 from room import RoomManager
 
 class Cache(dict):
+    def __init__(self):
+        self.rooms = {}
+
     def get_user(self,username):
         if username in self:
             return self[username]
         return ChatUser.get_user(username)
 
+    def add_room(self,room):
+        self.rooms[len(self.rooms)] = room
+
+    def get_room(self,room_id):
+        if isinstance(room_id,basestring):
+            room_id = int(room_id)
+        return self.rooms[room_id]
+
+    def get_active_rooms(self):
+        return [(i,j) for i,j in self.rooms.iteritems()]
 
 SESSION_CACHE = Cache()
 
@@ -89,13 +102,28 @@ class LobbyHandler(tornado.web.RequestHandler):
                     "username":user.username,
                     "status":user.username in SESSION_CACHE
                 })
+            for room_id,room in SESSION_CACHE.get_active_rooms():
+                _json["rooms"].append({
+                    "room_id":room_id
+                })
             self.write(serialize(_json))
         else:
             self.set_status(403,"Invalid session, please login")
 
 class JoinHandler(tornado.web.RequestHandler):
     def get(self):
-        self.write("join")
+        if authenticate(self.request):
+            req = self.request
+            try:
+                room = SESSION_CACHE.get_room(req.headers["CHAT_ROOM_ID"])
+                _addr = room.addr()
+                _json = {"addr":{"host":_addr[0],"port":_addr[1]}}
+                self.write(serialize(_json))
+            except Exception as e:
+                print traceback.format_exc()
+                self.set_status(500,"Invalid session, please login")
+        else:
+            self.set_status(403,"Invalid session, please login")
 
 class LeaveHandler(tornado.web.RequestHandler):
     def get(self):
@@ -110,6 +138,7 @@ class CreateHandler(tornado.web.RequestHandler):
             _addr = room.addr()
             _json = {"addr":{"host":_addr[0],"port":_addr[1]}}
             self.write(serialize(_json))
+            SESSION_CACHE.add_room(room)
         else:
             self.set_status(403,"Invalid session, please login")
             

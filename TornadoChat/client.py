@@ -109,10 +109,24 @@ class ChatClient(object):
             raise LobbyError("Failed to fetch Lobby <"+str(response.code)+" "+str(response.error)+" >")
         else:
             return response
-            
-    def join_room(self):
-        req = self.request('join',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
-        return self.fetch(req,handle_request)
+    def join(self,room_id):
+        res = self.join_room(room_id)
+        if res.error:
+            raise RoomCreationError(" Server returned <"+str(res.code)+" "+res.error+">")
+        else:
+            manager = ChatDisplayManager(self.session_token,self.username)
+            _json = json.loads(res.body)
+            manager.run_chat_room((_json["addr"]["host"],int(_json["addr"]["port"])))
+
+    
+    def join_room(self,room_id):
+        req = self.request(
+            'join',
+            headers={
+                "CHAT_UNAME":self.username,
+                "CHAT_SESSION_TOKEN":self.session_token,
+                "CHAT_ROOM_ID":str(room_id)})
+        return self.fetch(req)
     
     def leave_room(self):
         req = self.request('leave',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
@@ -173,8 +187,8 @@ try:
             print "Active Rooms:"
             for room in _json["rooms"]:
                 print "<"+str(len(options))+">",
-                print room["name"]+": ",room["users"]
-                options.append("room:"+room["room_id"])
+                print "Join Room",room["room_id"]
+                options.append("room:"+str(room["room_id"]))
         else:
             print "No active rooms"
         
@@ -219,11 +233,11 @@ try:
         elif action == "toggle_offline":
             SHOW_OFFLINE = not SHOW_OFFLINE
         elif action == "create":
-            res = client.create()
+            client.create()
         elif action.startswith("user:"):
             pass # create a new room, notify user of desire to chat
         elif action.startswith("room:"):
-            pass # join a room
+            client.join(int(action[action.find(":")+1:]))
 
 except HTTPError as e:
     print "HTTPError:",e

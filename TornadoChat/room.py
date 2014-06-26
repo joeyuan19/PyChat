@@ -85,8 +85,8 @@ class RoomManager(threading.Thread):
             for sock in rsockets:
                 if sock == self.server_socket:
                     new_conn, new_addr = sock.accept()
-                    user = new_conn.recv(128)
-                    _json = json.loads(user)
+                    new_user = new_conn.recv(128)
+                    _json = json.loads(new_user)
                     if _json["name"] in self.cache and self.cache[_json["name"]].session_token == _json["sess"]:
                         c = self.connect_user(self.cache[_json["name"]], new_conn)
                         _json = {
@@ -95,12 +95,17 @@ class RoomManager(threading.Thread):
                             "frmt":c
                         }
                         new_conn.send(serialize(_json))
+                        self.broadcast({
+                            "verb":"join",
+                            "name":_json["name"]
+                        })
                     else:
                         print "refused connection"
                         new_conn.close()
                 else:
                     try:
                         msg = sock.recv(self.RECV_SIZE)
+                        write_log("Server received",msg)
                         self.adjust_activity(sock)
                         self.broadcast(msg)
                     except Exception as e:
