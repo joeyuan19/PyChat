@@ -19,6 +19,35 @@ class RoomCreationError(Exception):
 class LobbyError(Exception):
     pass
 
+
+def _write_log(entry):
+    with open('log_client.log','a') as f:
+        f.write(str(entry)+"\n")
+
+def write_log(*args):
+    msg = ''
+    for arg in args:
+        msg += str(arg) + ' '
+    _write_log(msg)
+
+def write_err(e,err_title="PyChatError"):
+    write_log(err_title+": "+str(e)+"\n",traceback.format_exc())
+
+def time_now():
+    return datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
+
+def time_to_display(s):
+    return datetime.datetime.now().strptime(s,"%Y%m%d%H%M%S%f").strftime("%H:%M:%S")
+
+def serialize(_json):
+    return json.dumps(_json,separators=(",",":"))
+
+def deserialize(_json):
+    try:
+        return json.loads(_json)
+    except:
+        write_log("JSONDecodeERROR:","<",_json,">","\n",traceback.format_exc())
+
 class ChatClient(object):
     def __init__(self,server="127.0.0.1:8000"):
         self.http_client = HTTPClient()
@@ -74,7 +103,7 @@ class ChatClient(object):
             if response.error:
                 print "LoginError:",response.code,response.error
             else:
-                _json = json.loads(response.body)
+                _json = deserialize(response.body)
                 self.session_token = _json["session_token"]
                 if len(self.session_token) == 16:
                     self._loggedin = True
@@ -112,10 +141,10 @@ class ChatClient(object):
     def join(self,room_id):
         res = self.join_room(room_id)
         if res.error:
-            raise RoomCreationError(" Server returned <"+str(res.code)+" "+res.error+">")
+            raise RoomCreationError("Server returned <"+str(res.code)+" "+res.error+">")
         else:
             manager = ChatDisplayManager(self.session_token,self.username)
-            _json = json.loads(res.body)
+            _json = deserialize(res.body)
             manager.run_chat_room((_json["addr"]["host"],int(_json["addr"]["port"])))
 
     
@@ -138,7 +167,7 @@ class ChatClient(object):
             raise RoomCreationError(" Server returned <"+str(res.code)+" "+res.error+">")
         else:
             manager = ChatDisplayManager(self.session_token,self.username)
-            _json = json.loads(res.body)
+            _json = deserialize(res.body)
             manager.run_chat_room((_json["addr"]["host"],int(_json["addr"]["port"])))
     
     def create_room(self):
@@ -177,7 +206,7 @@ try:
     SHOW_OFFLINE = False
     while True:
         lobby = client.get_lobby()
-        _json = json.loads(lobby.body)
+        _json = deserialize(lobby.body)
         print "\n\n\nLobby\n"
         print "Enter 'help' for help"
         print

@@ -24,7 +24,10 @@ class Cache(dict):
     def get_room(self,room_id):
         if isinstance(room_id,basestring):
             room_id = int(room_id)
-        return self.rooms[room_id]
+        if room_id in self.rooms:
+            return self.rooms[room_id]
+        else:
+            return None
 
     def get_active_rooms(self):
         return [(i,j) for i,j in self.rooms.iteritems()]
@@ -116,19 +119,40 @@ class JoinHandler(tornado.web.RequestHandler):
             req = self.request
             try:
                 room = SESSION_CACHE.get_room(req.headers["CHAT_ROOM_ID"])
-                _addr = room.addr()
-                _json = {"addr":{"host":_addr[0],"port":_addr[1]}}
-                self.write(serialize(_json))
+                if room is not None:
+                    _addr = room.addr()
+                    _json = {"addr":{"host":_addr[0],"port":_addr[1]}}
+                    self.write(serialize(_json))
+                    print "User",req.headers["CHAT_UNAME"],"joined a room"
+                else:
+                    self.set_status(400,"Room "+req.headers["CHAT_ROOM_ID"]+" Not found")
             except Exception as e:
                 print traceback.format_exc()
                 self.set_status(500,"Invalid session, please login")
         else:
             self.set_status(403,"Invalid session, please login")
 
+
 class LeaveHandler(tornado.web.RequestHandler):
     def get(self):
-        self.write("Leave")
+        if authenticate(self.request):
+            req = self.request
+            try:
+                room = SESSION_CACHE.get_room(req.headers["CHAT_ROOM_ID"])
+                if room is not None:
+                    if room.user_in_room(req.headers["CHAT_UNAME"]):
+                        pass
+                    else:
+                        self.set_status(403,"User: "+req.headers["CHAT_UNAME"]+" not in room "+req.headers["CHAT_ROOM_ID"])
+                else:
+                    self.set_status(400,"Room "+req.headers["CHAT_ROOM_ID"]+" Not found")
+            except Exception as e:
+                print traceback.format_exc()
+                self.set_status(500,"Invalid session, please login")
+        else:
+            self.set_status(403,"Invalid session, please login")
 
+        
 class CreateHandler(tornado.web.RequestHandler):
     def get(self):
         if authenticate(self.request):
@@ -137,8 +161,8 @@ class CreateHandler(tornado.web.RequestHandler):
                 pass
             _addr = room.addr()
             _json = {"addr":{"host":_addr[0],"port":_addr[1]}}
-            self.write(serialize(_json))
             SESSION_CACHE.add_room(room)
+            print "User",self.request.headers["CHAT_UNAME"],"created a room"
         else:
             self.set_status(403,"Invalid session, please login")
             
@@ -157,4 +181,5 @@ app = tornado.web.Application([
 
 if __name__ == "__main__":
     app.listen(8000)
+    print "Server started..."
     tornado.ioloop.IOLoop.instance().start()

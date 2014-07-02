@@ -3,11 +3,12 @@ import select
 import random
 import threading
 import traceback
+import datetime
 import json
 
 def _write_log(entry):
     with open('room.log','a') as f:
-        f.write(str(entry)+"\n")
+        f.write(time_now()+" " +str(entry)+"\n")
 
 def write_log(*args):
     msg = ''
@@ -21,6 +22,11 @@ def write_err(err_name="PyChatError"):
 def serialize(_json):
     return json.dumps(_json,separators=(",",":"))
 
+def deserialize(_json):
+    return json.loads(_json)
+
+def time_now():
+    return datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
 
 class RoomManager(threading.Thread):
     CONNECT_LIMIT = 10
@@ -80,37 +86,43 @@ class RoomManager(threading.Thread):
         return self._stop.isSet()
 
     def run(self):
-        while not self.isstopped() and self.isactive():
-            rsockets, wsockets, errsockets = select.select([sock for sock,user in self.sockets],[],[])
-            for sock in rsockets:
-                if sock == self.server_socket:
-                    new_conn, new_addr = sock.accept()
-                    new_user = new_conn.recv(128)
-                    _json = json.loads(new_user)
-                    if _json["name"] in self.cache and self.cache[_json["name"]].session_token == _json["sess"]:
-                        c = self.connect_user(self.cache[_json["name"]], new_conn)
-                        _json = {
-                            "users":[(user.username,frmt) for frmt,user in self.user_color.iteritems()],
-                            "name":self.name,
-                            "frmt":c
-                        }
-                        new_conn.send(serialize(_json))
-                        self.broadcast({
-                            "verb":"join",
-                            "name":_json["name"]
-                        })
+        write_log("create room")
+        try:
+            while not self.isstopped() and self.isactive():
+                rsockets, wsockets, errsockets = select.select([sock for sock,user in self.sockets],[],[])
+                for sock in rsockets:
+                    if sock == self.server_socket:
+                        new_conn, new_addr = sock.accept()
+                        new_user = new_conn.recv(128)
+                        _json = deserialize(new_user)
+                        if _json["name"] in self.cache and self.cache[_json["name"]].session_token == _json["sess"]:
+                            new_conn.send(serialize({
+                                "users":[(user.username,frmt) for frmt,user in self.user_color.iteritems()],
+                                "name":self.name,
+                                "frmt":c
+                            }))
+                            c = self.connect_user(self.cache[_json["name"]], new_conn)
+                            self.broadcast(serialize({
+                                "verb":"join",
+                                "name":_json["name"],
+                                "frmt":c,
+                            }))
+                        else:
+                            write_log("new conn refused",_json)
+                            new_conn.close()
                     else:
-                        print "refused connection"
-                        new_conn.close()
-                else:
-                    try:
-                        msg = sock.recv(self.RECV_SIZE)
-                        write_log("Server received",msg)
-                        self.adjust_activity(sock)
-                        self.broadcast(msg)
-                    except Exception as e:
-                        write_err("ReceiveError")
-                        self.disconnect_user(sock=sock)
+                        try:
+                            msg = sock.recv(self.RECV_SIZE)
+                            if len(msg.strip())>0:
+                                write_log("Server received",msg)
+                            self.adjust_activity(sock)
+                            self.broadcast(msg)
+                        except Exception as e:
+                            write_err("ReceiveError")
+                            self.disconnect_user(sock=sock)
+        except:
+            write_log("ServerCloseError",traceback.format_exc())
+        write_log("closing room")
         self.disconnect()
     
     def adjust_activity(self,sock):
@@ -133,12 +145,11 @@ class RoomManager(threading.Thread):
     def disconnect_user(self,user=None,sock=None,index=None):
         if index is not None:
             try:
-                self.package_and_broadcast(msg=user.name+" has left the room...")
                 self.sockets[index][0].close()
                 self.sockets.pop(index)
                 return
             except Exception as e:
-                write_err("Disconnect Exception:")
+                write_err("Disconnect Exception")
                 return
         if user is None and sock is None:
             return
@@ -152,7 +163,6 @@ class RoomManager(threading.Thread):
         for sock,user in self.sockets:
             if sock:
                 sock.close()
-        self.room.delete()
         self.stop()
 
     def isactive(self):

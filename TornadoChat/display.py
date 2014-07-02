@@ -13,7 +13,7 @@ import traceback
 # 1. Make it work
 # 2. Add formatting
 # 3. code snippets
-# 4. ascii image sharing
+# 4. ASCII image sharing
 
 
 # Debug functions
@@ -112,6 +112,12 @@ def join_messages(msgs):
 def serialize(_json):
     return json.dumps(_json,separators=(",",":"))
 
+def deserialize(_json):
+    try:
+        return json.loads(_json)
+    except:
+        write_log("JSONDecodeERROR:",_json,"\n",traceback.format_exc())
+
 class StatusThread(threading.Thread):
     def __init__(self,manager,*args,**kwargs):
         super(StatusThread,self).__init__(*args,**kwargs)
@@ -165,7 +171,6 @@ class MessageThread(threading.Thread):
         self.server_socket.send(join_request)
         room_info = self.server_socket.recv(self.RECV_SIZE)
         manager.set_room_info(room_info)
-        self.setDaemon(True)
     
     def run(self):
         while not self.isstopped():
@@ -184,8 +189,15 @@ class MessageThread(threading.Thread):
                 if _next is not None:
                     write_log("msg thred:sending",_next)
                     self.server_socket.send(_next)
-        write_log("error")
         self.disconnect()
+    
+    def leave(self):
+        _msg = {
+            "verb":"leave",
+            "name":self.manager.USER_NAME,
+            "frmt":self.manager.USER_FORMAT
+        }
+        self.msg_queue.append(serialize(_msg))
     
     def send(self,msg):
         total = 0
@@ -239,7 +251,10 @@ class MessageThread(threading.Thread):
         return self._stop.isSet()
 
     def process(self,msg):
-        msg = json.loads(msg)
+        try:
+            msg = deserialize(msg)
+        except ValueError: 
+            write_log("Could no decode <",msg,">",traceback.format_exc())
         if msg["verb"] == "msg":
             if msg["totl"] > 1:
                 self._process_partial_message(msg)
@@ -247,6 +262,8 @@ class MessageThread(threading.Thread):
                 self.manager.add_msg(msg)
         elif msg["verb"] == "join":
             self.manager.add_user(msg)
+        elif msg["verb"] == "leave":
+            self.manager.leave_user(msg)
 
 def split_window(window,ratio=0.75):
     height,width = getwindowyx(window)
@@ -266,7 +283,7 @@ class ChatDisplayManager(object):
     chat = None
     HAS_COLORS = False
     CAN_CHANGE_COLORS = False
-    USER_COLOR_INDEX = (-1,-1)
+    USER_FORMAT = (-1,-1)
     DIV_CHAR = "="
     USER_NAME = ""
     USERS = []
@@ -397,15 +414,26 @@ class ChatDisplayManager(object):
         curses.setsyx(y,x)
 
     def set_room_info(self,_json):
-        _json = json.loads(_json)
+        _json = deserialize(_json)
         for user in _json["users"]:
             self.USERS.append(tuple(user))
         self.ROOM_NAME = _json["name"]
+        self.USER_FORMAT
 
     def add_user(self,msg):
         frmt = tuple(msg["frmt"])
         self.USERS.append((msg["name"],frmt))
-        self.chat_log.append((msg["name"]+" has joined the room",(0,len(msg["name"]),)+frmt))
+        if msg["name"] != self.USER_NAME:
+            self.chat_log.append((msg["name"]+" has joined the room!",
+            (0,len(msg["name"]),)+frmt))
+            
+    def leave_user(self,msg):
+        frmt = tuple(msg["frmt"])
+        self.USERS.remove((msg["name"],frmt))
+        if msg["name"] != self.USER_NAME:
+            self.chat_log.append((msg["name"]+" has left the room...",
+            (0,len(msg["name"]),)+frmt))
+
     
     def add_msg(self,msg):
         _msg = msg["name"]+" ("+time_to_display(msg["time"])+"): "+msg["msg"]
