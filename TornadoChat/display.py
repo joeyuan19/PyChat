@@ -261,9 +261,11 @@ class MessageThread(threading.Thread):
             else:
                 self.manager.add_msg(msg)
         elif msg["verb"] == "join":
-            self.manager.add_user(msg)
+            if msg["name"] != self.manager.USER_NAME:
+                self.manager.add_user(msg)
         elif msg["verb"] == "leave":
-            self.manager.leave_user(msg)
+            if msg["name"] != self.manager.USER_NAME:
+                self.manager.leave_user(msg)
 
 def split_window(window,ratio=0.75):
     height,width = getwindowyx(window)
@@ -519,6 +521,7 @@ class ChatDisplayManager(object):
             self.status_thread.stop()
             self.message_thread.stop()
         except KeyboardInterrupt:
+            self.message_thread.leave()
             if curses:
                 curses.endwin()
             if self.status_thread is not None:

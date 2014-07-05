@@ -161,6 +161,7 @@ class CreateHandler(tornado.web.RequestHandler):
                 pass
             _addr = room.addr()
             _json = {"addr":{"host":_addr[0],"port":_addr[1]}}
+            self.write(serialize(_json))
             SESSION_CACHE.add_room(room)
             print "User",self.request.headers["CHAT_UNAME"],"created a room"
         else:

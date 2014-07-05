@@ -96,12 +96,12 @@ class RoomManager(threading.Thread):
                         new_user = new_conn.recv(128)
                         _json = deserialize(new_user)
                         if _json["name"] in self.cache and self.cache[_json["name"]].session_token == _json["sess"]:
+                            c = self.connect_user(self.cache[_json["name"]], new_conn)
                             new_conn.send(serialize({
                                 "users":[(user.username,frmt) for frmt,user in self.user_color.iteritems()],
                                 "name":self.name,
                                 "frmt":c
                             }))
-                            c = self.connect_user(self.cache[_json["name"]], new_conn)
                             self.broadcast(serialize({
                                 "verb":"join",
                                 "name":_json["name"],
