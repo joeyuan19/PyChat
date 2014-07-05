@@ -198,6 +198,7 @@ class MessageThread(threading.Thread):
             "frmt":self.manager.USER_FORMAT
         }
         self.msg_queue.append(serialize(_msg))
+        write_log("Leave",self.msg_queue,_msg)
     
     def send(self,msg):
         total = 0
@@ -242,7 +243,7 @@ class MessageThread(threading.Thread):
         self.manager.display_chat_log()
 
     def disconnect(self):
-        self.server_socket.close()
+        pass
 
     def stop(self):
         self._stop.set()
@@ -277,18 +278,6 @@ def split_window(window,ratio=0.75):
 
 
 class ChatDisplayManager(object):
-    status_thread = None
-    message_thread = None
-    window = None
-    log = None
-    status = None
-    chat = None
-    HAS_COLORS = False
-    CAN_CHANGE_COLORS = False
-    USER_FORMAT = (-1,-1)
-    DIV_CHAR = "="
-    USER_NAME = ""
-    USERS = []
     DEFAULT_BACKGROUND = 7
     DEFAULT_FOREGROUND = 0
     COLOR_PAIRS = [
@@ -319,12 +308,24 @@ class ChatDisplayManager(object):
         6: curses.COLOR_RED,
         7: curses.COLOR_BLACK,
     }
-    status = ""
-    status_msg = ""
-    chat_msg = ""
-    chat_log = []
     
     def __init__(self,session_token,username):
+        self.status = ""
+        self.status_msg = ""
+        self.chat_msg = ""
+        self.chat_log = []
+        self.status_thread = None
+        self.message_thread = None
+        self.window = None
+        self.log = None
+        self.status = None
+        self.chat = None
+        self.HAS_COLORS = False
+        self.CAN_CHANGE_COLORS = False
+        self.USER_FORMAT = (-1,-1)
+        self.DIV_CHAR = "="
+        self.USER_NAME = ""
+        self.USERS = []
         self.SESSION_TOKEN = session_token
         self.USER_NAME = username
 
@@ -430,12 +431,13 @@ class ChatDisplayManager(object):
             (0,len(msg["name"]),)+frmt))
             
     def leave_user(self,msg):
-        frmt = tuple(msg["frmt"])
-        self.USERS.remove((msg["name"],frmt))
-        if msg["name"] != self.USER_NAME:
-            self.chat_log.append((msg["name"]+" has left the room...",
-            (0,len(msg["name"]),)+frmt))
-
+        for i in range(len(self.USERS)):
+            if self.USERS[i][0] == msg["name"]:
+                user = self.USERS.pop(i)
+                if msg["name"] != self.USER_NAME:
+                    self.chat_log.append((user[0]+" has left the room...",
+                    (0,len(msg["name"]),)+tuple(user[1])))
+                break
     
     def add_msg(self,msg):
         _msg = msg["name"]+" ("+time_to_display(msg["time"])+"): "+msg["msg"]

@@ -122,8 +122,12 @@ class ChatClient(object):
                 "CHAT_SESSION_TOKEN":self.session_token
             }
         )
-        return self.fetch(req,handle_request)
-    
+        res = self.fetch(req) 
+        if res.error:
+            print "Error logging out. received:",res.code,res.error
+        else:
+            return
+
     def get_lobby(self):
         req = self.request('lobby',
             headers={
@@ -146,7 +150,7 @@ class ChatClient(object):
             manager = ChatDisplayManager(self.session_token,self.username)
             _json = deserialize(res.body)
             manager.run_chat_room((_json["addr"]["host"],int(_json["addr"]["port"])))
-
+            del(manager)
     
     def join_room(self,room_id):
         req = self.request(
@@ -157,8 +161,13 @@ class ChatClient(object):
                 "CHAT_ROOM_ID":str(room_id)})
         return self.fetch(req)
     
-    def leave_room(self):
-        req = self.request('leave',headers={"CHAT_UNAME":self.username,"CHAT_PWORD":self.pword})
+    def leave_room(self,room_id):
+        req = self.request('leave',
+            headers={
+                "CHAT_UNAME":self.username,
+                "CHAT_SESSION_TOKEN":self.session_token,
+                "CHAT_ROOM_ID":str(room_id)})
+            })
         return self.fetch(req,handle_request)
     
     def create(self):
@@ -237,8 +246,15 @@ try:
                 
         # Show offline
         print "<"+str(len(options))+">",
-        print "Show Offline"
         options.append("toggle_offline")
+        if SHOW_OFFLINE:
+            print "Hide Offline"
+            print "<"+str(len(options))+">",
+            print "<"+str(len(options))+">",
+            
+            options.append("toggle_offline")
+        else:
+            print "Show Offline"
         print
         
         # logout
@@ -275,6 +291,7 @@ except Exception as e:
     print traceback.format_exc()
 finally:
     if client:
+        client.logout()
         client.close()
 
 

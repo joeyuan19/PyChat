@@ -9,6 +9,9 @@ import traceback
 from db import ChatUser
 from room import RoomManager
 
+class AlreadyLoggedInError(Exception):
+    pass
+
 class Cache(dict):
     def __init__(self):
         self.rooms = {}
@@ -41,7 +44,24 @@ def get_user(username):
 
 def login(username,password):
     user = get_user(username)
+    if user.username in SESSION_CACHE:
+        raise AlreadyLoggedInError()
     return user is not None and user.login(password)
+
+
+def logout(request):
+    try:
+        username = request.headers["CHAT_UNAME"]
+        token = request.headers["CHAT_SESSION_TOKEN"]
+        user = get_user(username)
+        if user is not None and token == user.session_token:
+            SESSION_CACHE.pop(user.username)
+            user.session_token = ''
+            return True
+        else:
+            raise Exception()
+    except:
+        return False
 
 def authenticate(request):
     try:
@@ -72,7 +92,11 @@ class LoginHandler(tornado.web.RequestHandler):
         try:
             req = self.request
             if login(req.headers["CHAT_UNAME"],req.headers["CHAT_PWORD"]):
-                user = get_user(req.headers["CHAT_UNAME"])
+                try:
+                    user = get_user(req.headers["CHAT_UNAME"])
+                except AlreadyLoggedInError:
+                    self.set_status(401,"The user: "+req.headers["CHAT_UNAME"]+" is already logged in")
+                    return
                 token = user.session_token
                 if len(token) == 0:
                     token = get_new_token()
@@ -91,7 +115,11 @@ class LoginHandler(tornado.web.RequestHandler):
 
 class LogoutHandler(tornado.web.RequestHandler):
     def get(self):
-        self.write("Logout")
+        if logout(self.request):
+            print "Logged out",self.request.headers["CHAT_UNAME"]
+            return
+        else:
+            self.set_status(403,"Invalid session, please login")
 
 class LobbyHandler(tornado.web.RequestHandler):
     def get(self):

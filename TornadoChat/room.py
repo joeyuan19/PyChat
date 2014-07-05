@@ -102,19 +102,19 @@ class RoomManager(threading.Thread):
                                 "name":self.name,
                                 "frmt":c
                             }))
-                            self.broadcast(serialize({
-                                "verb":"join",
-                                "name":_json["name"],
-                                "frmt":c,
-                            }))
+                            self.broadcast(serialize(
+                                {
+                                    "verb":"join",
+                                    "name":_json["name"],
+                                    "frmt":c,
+                                }
+                            ))
                         else:
                             write_log("new conn refused",_json)
                             new_conn.close()
                     else:
                         try:
                             msg = sock.recv(self.RECV_SIZE)
-                            if len(msg.strip())>0:
-                                write_log("Server received",msg)
                             self.adjust_activity(sock)
                             self.broadcast(msg)
                         except Exception as e:
@@ -136,6 +136,11 @@ class RoomManager(threading.Thread):
                 except:
                     self.disconnect_user(sock=sock)
 
+    def connect_web_user(self,user,websock):
+        self.web_sockets.append((websock,user))
+        c = self.get_new_color()
+        self.user_color[c] = user
+
     def connect_user(self,user,sock):
         self.sockets.append((sock,user))
         c = self.get_new_color()
@@ -143,6 +148,9 @@ class RoomManager(threading.Thread):
         return c
         
     def disconnect_user(self,user=None,sock=None,index=None):
+        if self.server_socket == sock:
+            write_log("Tried to disconnect the server sock")
+            return
         if index is not None:
             try:
                 self.sockets[index][0].close()

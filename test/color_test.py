@@ -31,7 +31,6 @@ def assign_color_pairs():
     for i in range(8):
         for j in range(8):
             curses.init_pair(c, get_color(i), get_color(j))
-            print i,j,curses.color_pair(c)
             ci.append(str(i) + "," + str(j))
             c += 1
     return c, ci
@@ -46,8 +45,8 @@ while ch != ord('q'):
     ch = w.getch()
     for i in range(1,c):
         # Disco Colors
-        N = 256
-        curses.init_pair(N,get_color(random.randint(0,7)),get_color(random.randint(0,7)))
+        #N = 256
+        #curses.init_pair(N,get_color(random.randint(0,7)),get_color(random.randint(0,7)))
         y = int(ci[i-1][-1])
         x = int(ci[i-1][0])
         w.addstr(0,i-1,"a",curses.color_pair(N))
