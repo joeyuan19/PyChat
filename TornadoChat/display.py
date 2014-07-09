@@ -418,6 +418,7 @@ class ChatDisplayManager(object):
 
     def set_room_info(self,_json):
         _json = deserialize(_json)
+        write_log("Given these users in room",_json["users"])
         for user in _json["users"]:
             self.USERS.append(tuple(user))
         self.ROOM_NAME = _json["name"]

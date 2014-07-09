@@ -150,8 +150,7 @@ class ChatClient(object):
             manager = ChatDisplayManager(self.session_token,self.username)
             _json = deserialize(res.body)
             manager.run_chat_room((_json["addr"]["host"],int(_json["addr"]["port"])))
-            del(manager)
-    
+            
     def join_room(self,room_id):
         req = self.request(
             'join',
@@ -166,7 +165,7 @@ class ChatClient(object):
             headers={
                 "CHAT_UNAME":self.username,
                 "CHAT_SESSION_TOKEN":self.session_token,
-                "CHAT_ROOM_ID":str(room_id)})
+                "CHAT_ROOM_ID":str(room_id)
             })
         return self.fetch(req,handle_request)
     

@@ -59,6 +59,7 @@ class RoomManager(threading.Thread):
         self.server_socket.listen(self.CONNECT_LIMIT)
         # Initiate Socket List
         self.sockets = [(self.server_socket,None)]
+        self.web_sockets = []
         self.msg_queue = []
         self.user_color = {}
         super(RoomManager,self).__init__(*args,**kwargs)
@@ -147,7 +148,7 @@ class RoomManager(threading.Thread):
         self.user_color[c] = user
         return c
         
-    def disconnect_user(self,user=None,sock=None,index=None):
+    def disconnect_user(self,user=None,sock=None,index=None,username=None):
         if self.server_socket == sock:
             write_log("Tried to disconnect the server sock")
             return
@@ -162,8 +163,8 @@ class RoomManager(threading.Thread):
         if user is None and sock is None:
             return
         for i,pair in enumerate(self.sockets):
-            sock,user = pair
-            if user == user or sock == sock:
+            _sock,_user = pair
+            if (_user is not None and _user == user) or (_sock is not None and _sock == sock):
                 self.disconnect_user(index=i)
                 break
 
