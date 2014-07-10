@@ -4,7 +4,7 @@ import sys, select
 
 def prompt():
     sys.stdout.write('>>> ')
-    sys.stdout.flush()
+    #sys.stdout.flush()
 
 def on_connect(mosq, obj, rc):
     if rc == 0:
