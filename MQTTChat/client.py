@@ -1,25 +1,48 @@
-import paho.mqtt.client as mqtt
+import mosquitto
+import sys, select
 
-# The callback for when the client receives a CONNACK response from the server.
-def on_connect(client, userdata, flags, rc):
-    print("Connected with result code "+str(rc))
 
-    # Subscribing in on_connect() means that if we lose the connection and
-    # reconnect then subscriptions will be renewed.
-    client.subscribe("$SYS/#")
+def prompt():
+    sys.stdout.write('>>> ')
+    sys.stdout.flush()
 
-# The callback for when a PUBLISH message is received from the server.
-def on_message(client, userdata, msg):
-    print(msg.topic+" "+str(msg.payload))
+def on_connect(mosq, obj, rc):
+    if rc == 0:
+        client.subscribe("room/1")
+        print "Connected successfully"
+        prompt()
+    else:
+        raise Exception("Connection to chat room unsuccessful")
 
-client = mqtt.Client()
+def on_message(mosq, obj, msg):
+    sys.stdout.write(str(msg.payload))
+    prompt()
+
+def on_disconnect(mosq, obj, rc):
+    print "Disconnected.  Bye!"
+
+if len(sys.argv) > 1:
+    username = sys.argv[1]
+else:
+    username = "Anonymous"
+
+client = mosquitto.Mosquitto(username)
 client.on_connect = on_connect
 client.on_message = on_message
+client.on_disconnect = on_disconnect
+client.connect("127.0.0.1",port=8000) 
+client.loop_start()
 
-client.connect("iot.eclipse.org", 1883, 60)
-
-# Blocking call that processes network traffic, dispatches callbacks and
-# handles reconnecting.
-# Other loop*() functions are available that give a threaded interface and a
-# manual interface.
-client.loop_forever()
+while True:
+    try:
+         rsock, wsock, esock = select.select([sys.stdin],[],[])
+         for sock in rsock:
+            msg = sys.stdin.readline()
+            client.publish("room/1",username+": "+msg,1)
+            prompt()
+    except KeyboardInterrupt:
+        print "Leaving room..."
+        break
+        
+client.loop_stop()
+client.disconnect()
