@@ -4,7 +4,7 @@ import sys, select
 
 def prompt():
     sys.stdout.write('>>> ')
-    #sys.stdout.flush()
+    sys.stdout.flush()
 
 def on_connect(mosq, obj, rc):
     if rc == 0:
@@ -15,6 +15,8 @@ def on_connect(mosq, obj, rc):
         raise Exception("Connection to chat room unsuccessful")
 
 def on_message(mosq, obj, msg):
+    if str(msg.payload).startswith(username):
+        return
     sys.stdout.write(str(msg.payload))
     prompt()
 
