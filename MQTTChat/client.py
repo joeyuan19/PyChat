@@ -1,6 +1,23 @@
 import mosquitto
 import sys, select
+import time
+import datetime
+import json
 
+def time_now():
+    return datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")
+
+def time_to_display(s):
+    return datetime.datetime.now().strptime(s,"%Y%m%d%H%M%S%f").strftime("%H:%M:%S")
+
+def serialize(_json):
+    return json.dumps(_json,separators=(",",":"))
+
+def deserialize(_json):
+    try:
+        return json.loads(_json)
+    except:
+        write_log("JSONDecodeERROR:",_json,"\n",traceback.format_exc())
 
 def prompt():
     sys.stdout.write('>>> ')
@@ -15,13 +32,14 @@ def on_connect(mosq, obj, rc):
         raise Exception("Connection to chat room unsuccessful")
 
 def on_message(mosq, obj, msg):
-    if str(msg.payload).startswith(username):
+    payload = deserialize(msg.payload)
+    if str(payload["name"]).startswith(username):
         return
-    sys.stdout.write(str(msg.payload))
+    sys.stdout.write(payload["name"] + ": "+payload["msg"]+"\n")
     prompt()
 
 def on_disconnect(mosq, obj, rc):
-    print "Disconnected.  Bye!"
+    print "Disconnected, bye!"
 
 if len(sys.argv) > 1:
     username = sys.argv[1]
@@ -40,7 +58,15 @@ while True:
          rsock, wsock, esock = select.select([sys.stdin],[],[])
          for sock in rsock:
             msg = sys.stdin.readline()
-            client.publish("room/1",username+": "+msg,1)
+            time_stamp = time_now()
+            _msg = {
+                "verb":"msg",
+                "msg":msg,
+                "frmt":[],
+                "time":time_stamp,
+                "name":username
+            }
+            client.publish("room/1",serialize(_msg),1)
             prompt()
     except KeyboardInterrupt:
         print "Leaving room..."
