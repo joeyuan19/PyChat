@@ -50,7 +50,9 @@ client = mosquitto.Mosquitto(username)
 client.on_connect = on_connect
 client.on_message = on_message
 client.on_disconnect = on_disconnect
-client.connect("127.0.0.1",port=8000) 
+client.connect("184.154.221.154",port=1883) 
+#client.connect("127.0.0.1",port=1883) 
+
 client.loop_start()
 
 while True:

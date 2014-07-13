@@ -213,7 +213,10 @@ class ChatDisplayManager(object):
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.on_disconnect = self.on_disconnect
-        self.client.connect_async("127.0.0.1",port=8000)
+        # local
+        #self.client.connect("127.0.0.1",port=1883)
+        # server
+        self.client.connect("184.154.221.154",port=1883)
 
 
     def on_connect(self, mosq, obj, rc):
@@ -221,9 +224,33 @@ class ChatDisplayManager(object):
             raise Exception("Connection failed")
         else:
             self.client.subscribe("room/1")
+            self.client.will_set("room/1",self.USER_NAME+" lost connection...",1)
+            time_stamp = time_now()
+            _msg = {
+                "verb":"join",
+                "msg":"",
+                "frmt":[],
+                "time":time_stamp,
+                "name":self.USER_NAME
+            }
+            self.client.publish("room/1",serialize(_msg),1)
 
     def on_message(self, mosq, obj, msg):
-        self.add_msg(deserialize(msg.payload))
+        msg = deserialize(msg.payload)
+        self.add_msg(msg)
+   
+    def disconnect(self):
+        time_stamp = time_now()
+        _msg = {
+            "verb":"leave",
+            "msg":"",
+            "frmt":[],
+            "time":time_stamp,
+            "name":self.USER_NAME
+        }
+        self.client.publish("room/1",serialize(_msg),1)
+        self.client.unsubscribe("room/1")
+        self.client.disconnect()
 
     def on_disconnect(self, mosq, obj, rc):
         pass
@@ -257,7 +284,6 @@ class ChatDisplayManager(object):
                 last = _format
             _string = string[last[1]:_format[1]]
             self._addstr(window,y,x+last[1],_string)
-            
     
     def _addstr(self,window,y,x,s,c=None):
         if self.HAS_COLORS and c is not None:
@@ -322,34 +348,38 @@ class ChatDisplayManager(object):
         self.USER_FORMAT
 
     def add_user(self,msg):
-        frmt = tuple(msg["frmt"])
-        self.USERS.append((msg["name"],frmt))
         if msg["name"] != self.USER_NAME:
-            self.chat_log.append((msg["name"]+" has joined the room!",
-            (0,len(msg["name"]),)+frmt))
+            self.chat_log.append((msg["name"]+" has joined the room!",None))
             
     def leave_user(self,msg):
-        for i in range(len(self.USERS)):
-            if self.USERS[i][0] == msg["name"]:
-                user = self.USERS.pop(i)
-                if msg["name"] != self.USER_NAME:
-                    self.chat_log.append((user[0]+" has left the room...",
-                    (0,len(msg["name"]),)+tuple(user[1])))
-                break
+        if msg["name"] != self.USER_NAME:
+            self.chat_log.append((msg["name"]+" has left the room...",None))
     
     def add_msg(self,msg):
-        _msg = msg["name"]+" ("+time_to_display(msg["time"])+"): "+msg["msg"]
-        self.chat_log.append((_msg.strip(),msg["frmt"]))
+        if msg["verb"] == "msg":
+            _msg = msg["name"]+" ("+time_to_display(msg["time"])+"): "+msg["msg"]
+            self.chat_log.append((_msg.strip(),None))
+            if msg["name"] != self.USER_NAME and len(self.chat_log) > 0 and self.chat_log[-1][0].startswith(self.USER_NAME):
+                print '\a'
+        elif msg["verb"] == "join":
+            self.add_user(msg)
+            if msg["name"] != self.USER_NAME:
+                print '\a'
+        elif msg["verb"] == "leave":
+            self.leave_user(msg)
+            if msg["name"] != self.USER_NAME:
+                print '\a'
     
     def users_in_room(self):
-        if len(self.USERS) == 0:
-            return "Connected",[]
-        s = "Connected to: "
-        _frmt = []
-        for user,frmt in self.USERS:
-            #_frmt.append((len(s),len(s)+len(user))+frmt)
-            s += user + ", "
         return "Connected",[]
+
+        #if len(self.USERS) == 0:
+        #s = "Connected to: "
+        #_frmt = []
+        #for user,frmt in self.USERS:
+        #    _frmt.append((len(s),len(s)+len(user))+frmt)
+        #    s += user + ", "
+        #return "Connected",[]
 
     def get_colors(self,c):
         if c[0] < 0:
@@ -427,8 +457,8 @@ class ChatDisplayManager(object):
         except Exception as e:
             write_log(e, traceback.format_exc())
         finally:
+            self.disconnect()
             self.client.loop_stop()
-            self.client.disconnect()
             if curses:
                 curses.endwin()
 
