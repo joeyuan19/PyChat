@@ -1,0 +1,39 @@
+<html>
+    <head>
+        <script src="static/js/mqttws31.js"></script>
+    </head>
+    <body>
+        <div id="debug">
+            
+        </div>
+        <script>
+            function onConnectionLost(responseObject) {
+                if (responseObject.errorCode !== 0) {
+                    alert("Connectoin Lost");
+                }
+            }
+            function onMessageArrived(message) {
+                console.log("Received: "+message);
+            }
+            function onConnect() {
+                console.log("Connected");
+                client.subscribe("room/1")
+            }
+            function pub(msg) {
+                var _msg = new Paho.MQTT.Message(msg);
+                _msg.destinationName = "room/1";
+                client.send(_msg);
+            }
+            var client = new Paho.MQTT.Client("184.154.221.154",1883,name);
+            client.onMessageArrived = onMessageArrived;
+            client.onConnect = onConnect;
+            client.onConnectionLost = onConnectionLost;
+            client.connect({onSuccess:onConnect});
+            
+            document.getElementById("debug").innerHTML="I should have loaded things by now";
+            var disconnect = function(client) {
+                client.disconnect();
+            }
+        </script>    
+    </body>
+</html>

@@ -1,0 +1,57 @@
+Making it work
+==============
+[~] HTTP connection tests
+    [+] login
+    [ ] get lobby
+        [+] get users
+            [+] test offline/online status
+        [ ] get rooms
+    [ ] create room
+    [ ] join room
+    [~] logout
+        - Still buggy, returns strange calls
+[ ] Socket connection tests
+    [ ] send/receive messages
+    [ ] send/receive large messages
+[ ] Message Processing
+    [ ] Properly handle large massages
+    [ ] Properly handle images (maybe with a img tag?)
+[ ] Thread safety Tests
+    [ ] Room Model to track threads
+    [ ] Threads stay alive on the server
+    [ ] Start and End appropriately
+[+] Authentication
+[ ] Notifications
+    [ ] New Chat initiation
+    [ ] Notification storage (chat.models.ChatUser)
+    [ ] Notification API
+        [ ] views.py
+        [ ] API call
+[ ] Window resizing
+[ ] Push to server
+    [ ] Set up production_settings.py
+    [ ] Re-Test all above HTTP requests
+
+
+Improvements
+=============
+[ ] Status Thread
+    [ ] Allow for error deliverence
+    [ ] File upload/download progress
+    [ ] Use for file searching
+    [ ] give Command line behaviour
+[ ] Migrate menu to be implemented in curses as well
+[ ] Investigate making 'POST' requests
+    - Currently causes a server error, there is some sort of Authentication
+[ ] Implement formatting
+    [ ] color formatting
+    [ ] text formatting
+    [ ] Code formatting -- ties with below goal
+[ ] Add '<code>' tags
+    [ ] Line numbers
+    [ ] Syntax highlighting
+    [ ] Import line snippets from existing code files
+[ ] Image to ascii support maybe with <img> tags?
+[ ] FTP file transfers
+[ ] Connection strength measurement
+
