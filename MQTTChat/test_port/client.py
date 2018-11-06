@@ -214,9 +214,9 @@ class ChatDisplayManager(object):
         self.client.on_message = self.on_message
         self.client.on_disconnect = self.on_disconnect
         # local
-        #self.client.connect("127.0.0.1",port=1883)
+        self.client.connect("127.0.0.1",port=1883)
         # server
-        self.client.connect("184.154.221.154",port=1883)
+        #self.client.connect("184.154.221.154",port=1883)
 
 
     def on_connect(self, mosq, obj, rc):

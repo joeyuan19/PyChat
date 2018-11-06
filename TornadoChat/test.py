@@ -13,7 +13,3 @@ cli = HTTPClient()
 acli.fetch("http://google.com",callback)
 
 res = cli.fetch("http://google.com")
-
-
-
-
